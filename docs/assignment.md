@@ -101,28 +101,9 @@ skim the files.
 
 ## Scaling to a real cohort
 
-The mock neighbourhood has twelve buildings by default. Set `n_buildings` in
-the config for any exact count:
+The mock neighbourhood has twelve buildings. `n_per_archetype` in the config
+scales that: `n_per_archetype: 6` gives 24, `: 8` gives 32. Building names
+stay `B01`, `B02`, ... and the archetypes keep cycling in the same order, so
+`B01`, `B05`, `B09`, ... are always solar-rich.
 
-```yaml
-n_buildings: 25      # matches the real Annex 96 neighbourhood
-```
-
-or from the command line:
-
-```bash
-python -m annex96p2p buildings --n-buildings 25
-```
-
-Archetypes keep cycling in the same order at any size, so `B01`, `B05`,
-`B09`, ... are always solar-rich. A count that is not a multiple of four
-comes out slightly uneven — 25 gives seven solar-rich and six of each of the
-others.
-
-**[`config/ce1_scale.yaml`](../config/ce1_scale.yaml) is ready to use**: 25
-buildings, five specialised teams of five, with the partition already worked
-out and measured. Over one week with the default agent it trades 553 kWh and
-clears in 46% of hours. Designing a lab at that size means the building count
-and the `assignments:` block carry over to the CityLearn backend unchanged
-— only the building names need remapping, since CityLearn uses the ResStock
-ids. See [citylearn.md](citylearn.md).
+For the real Annex 96 homes, see [citylearn.md](citylearn.md).

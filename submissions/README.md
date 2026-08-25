@@ -1,6 +1,6 @@
 # Submissions
 
-Put your agent here as a single `.py` file.
+Put your agent in this folder as a single `.py` file.
 
 ```bash
 cp example_team.py team_yourname.py
@@ -8,26 +8,33 @@ python -m annex96p2p check submissions/team_yourname.py
 python -m annex96p2p run --config ../config/default.yaml
 ```
 
-**The rules, the full API, the debugging guide and the pre-submission
-checklist all live in [the main README](../README.md).** They are deliberately
-not repeated here, so there is one copy that cannot drift out of date. Read
-these sections before you start:
+## What the file must contain
 
-- [Submission rules](../README.md#submission-rules) — what a submission may
-  and may not do
-- [How the market works](../README.md#how-the-market-works) — the price
-  bounds, the bid→clear→dispatch order, why there is no imbalance penalty
-- [The API in full](../README.md#the-api-in-full) — every field of
-  `BuildingObs`, `MarketInfo`, `TradeResult` and `Action`
-- [Debugging your agent](../README.md#debugging-your-agent) — reading
-  `settlements.csv` when something looks wrong
-- [The default agent, and how to beat it](../README.md#the-default-agent-and-how-to-beat-it)
-  — its weaknesses are the assignment
+```python
+BUILDINGS = ["B01", "B02"]     # required: which buildings you control
+AGENT = MyAgent                # required: an Agent subclass or instance
+NAME = "team_yourname"         # optional: defaults to the file name
+```
 
-The one thing worth repeating: anything nobody claims is run by the built-in
-default agent, one participant per building. That is why you can develop
-alone — your market is full of counterparties even when yours is the only
-file in this folder.
+## Rules
 
-Files starting with `_` are ignored, so `_scratch.py` is a safe place to
-experiment.
+- **One file.** If you need helpers, put them in the same file.
+- **Files starting with `_` are ignored**, so `_scratch.py` is a safe place
+  to keep experiments without them being loaded as a submission.
+- **Only claim buildings you were assigned.** Run
+  `python -m annex96p2p buildings` to see what exists.
+- **Only touch your own buildings.** `dispatch()` may return actions only for
+  buildings in your `BUILDINGS`; anything else is discarded.
+- **Do not import from other submissions**, read other participants' state, or
+  reach into the runner. The observations you are handed are the only
+  information you get.
+- **Keep it fast.** A call taking longer than a second is flagged. There are
+  thousands of calls in a run.
+- **Do not crash on purpose.** A failing agent is replaced by the default
+  agent for that timestep, which will cost you.
+
+## Unclaimed buildings
+
+Anything nobody claims runs on the built-in default agent, one participant per
+building. That is why you can develop alone: your market is full of
+counterparties even when yours is the only file here.

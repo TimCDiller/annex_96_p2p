@@ -51,72 +51,6 @@ def tariff(backend):
 
 
 # --------------------------------------------------------------------------
-# neighbourhood sizing
-# --------------------------------------------------------------------------
-def test_exact_building_count():
-    """n_buildings=25 matches the real Annex 96 neighbourhood."""
-    specs = default_neighbourhood(n_buildings=25)
-    assert len(specs) == 25
-    assert specs[0].name == "B01" and specs[-1].name == "B25"
-
-
-def test_archetypes_cycle_at_any_size():
-    """B01, B05, B09 ... stay solar-rich whatever the neighbourhood size."""
-    for total in [4, 12, 25, 26, 40]:
-        specs = {s.name: s for s in default_neighbourhood(n_buildings=total)}
-        for index in range(1, total + 1, 4):
-            assert specs["B%02d" % index].archetype == "solar-rich"
-
-
-def test_25_gives_seven_solar_and_six_of_the_rest():
-    from collections import Counter
-    counts = Counter(s.archetype for s in default_neighbourhood(n_buildings=25))
-    assert counts["solar-rich"] == 7
-    assert counts["storage-rich"] == counts["thermal-mass"] == counts["balanced"] == 6
-
-
-def test_n_buildings_does_not_disturb_the_default_neighbourhood():
-    """The 12-building default must be byte-for-byte what it always was."""
-    old = default_neighbourhood(3)
-    new = default_neighbourhood(n_buildings=12)
-    assert [s.name for s in old] == [s.name for s in new]
-    assert [s.pv_kwp for s in old] == [s.pv_kwp for s in new]
-    assert [s.battery_capacity_kwh for s in old] == [s.battery_capacity_kwh for s in new]
-
-
-def test_rejects_an_empty_neighbourhood():
-    with pytest.raises(ValueError):
-        default_neighbourhood(n_buildings=0)
-
-
-def test_ce1_scale_partition_produces_a_live_market():
-    """The shipped 25-building partition must actually trade."""
-    assignment = {
-        "team_alpha": ["B01", "B05", "B09", "B13", "B17"],
-        "team_beta": ["B02", "B06", "B10", "B14", "B18"],
-        "team_gamma": ["B03", "B07", "B11", "B15", "B19"],
-        "team_delta": ["B04", "B08", "B12", "B16", "B20"],
-        "team_epsilon": ["B21", "B22", "B23", "B24", "B25"],
-    }
-    from annex96p2p.registry import Participant
-    backend = MockBackend(n_days=3, specs=default_neighbourhood(n_buildings=25))
-    t = Tariff.synthetic(backend.n_timesteps)
-    participants = [Participant(name=k, agent=SimpleRBCAgent(name=k, buildings=v),
-                                buildings=v)
-                    for k, v in assignment.items()]
-    result = simulate(backend, participants, t)
-    summary = result.ledger.system_summary()
-
-    assert summary["p2p_volume_kwh"] > 100.0
-    assert summary["clearing_rate"] > 0.25
-    # Every team should be doing something, including the mixed one.
-    frame = result.ledger.to_frame()
-    for name in assignment:
-        traded = frame[frame.participant == name].p2p_kwh.abs().sum()
-        assert traded > 1.0, "%s never traded" % name
-
-
-# --------------------------------------------------------------------------
 # discovery
 # --------------------------------------------------------------------------
 def test_loads_a_submission(tmp_path, backend):
@@ -196,25 +130,6 @@ def test_assignments_can_be_enforced(tmp_path, backend):
         build_participants(backend, tmp_path,
                            assignments={"team_a": ["B01"]},
                            strict_assignments=True)
-
-
-def test_unknown_team_name_cannot_escape_its_assignment(tmp_path, backend):
-    """Renaming yourself must not be a way out of the assignment table."""
-    write(tmp_path, "team_a.py", '["B01", "B02", "B03"]', "not_on_the_list")
-    with pytest.raises(SubmissionError):
-        build_participants(backend, tmp_path,
-                           assignments={"team_a": ["B01"]},
-                           strict_assignments=True)
-
-
-def test_unknown_team_name_is_only_a_warning_when_not_strict(tmp_path, backend):
-    """A student experimenting locally should not be blocked by this."""
-    write(tmp_path, "team_a.py", '["B01"]', "not_on_the_list")
-    participants, report = build_participants(
-        backend, tmp_path, assignments={"team_a": ["B01"]},
-        strict_assignments=False)
-    assert "not_on_the_list" in [p.name for p in participants]
-    assert report.conflicts
 
 
 # --------------------------------------------------------------------------

@@ -14,7 +14,7 @@ from typing import List, Optional
 
 from . import report as report_mod
 from .config import Config
-from .registry import SubmissionError, build_participants
+from .registry import build_participants
 from .runner import simulate
 from .tariff import Tariff
 
@@ -23,8 +23,7 @@ def make_backend(cfg: Config):
     if cfg.backend == "mock":
         from .backends.mock import MockBackend, default_neighbourhood
         return MockBackend(n_days=cfg.days,
-                           specs=default_neighbourhood(cfg.n_per_archetype,
-                                                       cfg.n_buildings))
+                           specs=default_neighbourhood(cfg.n_per_archetype))
     if cfg.backend == "citylearn":
         from .backends.citylearn_backend import CityLearnBackend
         return CityLearnBackend(dataset=cfg.citylearn_dataset,
@@ -41,23 +40,13 @@ def make_tariff(cfg: Config, n_timesteps: int) -> Tariff:
                             volatility=cfg.price_volatility, seed=cfg.seed, **kwargs)
 
 
-def do_run(cfg: Config, show_defaults: bool, quiet: bool = False,
-           cfg_path: Optional[str] = None):
+def do_run(cfg: Config, show_defaults: bool, quiet: bool = False):
     backend = make_backend(cfg)
     tariff = make_tariff(cfg, backend.n_timesteps)
-    try:
-        participants, discovery = build_participants(
-            backend, cfg.submissions, default_agent=cfg.default_agent,
-            unclaimed_mode=cfg.unclaimed_mode, conflict_policy=cfg.conflict_policy,
-            assignments=cfg.assignments, strict_assignments=cfg.strict_assignments)
-    except SubmissionError as exc:
-        # A setup problem, not a crash. Say what is wrong and stop cleanly.
-        raise SystemExit(
-            "\nCannot start: the submissions do not match the assignment table.\n\n"
-            "  %s\n\n"
-            "Fix the BUILDINGS or NAME in the offending submission, or adjust\n"
-            "the `assignments:` block in %s.\n"
-            % (str(exc).replace("\n", "\n  "), cfg_path or "your config"))
+    participants, discovery = build_participants(
+        backend, cfg.submissions, default_agent=cfg.default_agent,
+        unclaimed_mode=cfg.unclaimed_mode, conflict_policy=cfg.conflict_policy,
+        assignments=cfg.assignments, strict_assignments=cfg.strict_assignments)
 
     if not quiet:
         text = discovery.render()
@@ -145,9 +134,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         p.add_argument("--days", type=int, default=None, help="override simulated days")
         p.add_argument("--submissions", default=None, help="override submissions folder")
         p.add_argument("--out", default=None, help="override output folder")
-        p.add_argument("--n-buildings", type=int, default=None, dest="n_buildings",
-                       help="exact number of buildings (mock backend); "
-                            "25 matches the real Annex 96 neighbourhood")
 
     run_p = sub.add_parser("run", help="run a simulation")
     add_common(run_p)
@@ -172,7 +158,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     cfg = Config.load(getattr(args, "config", None))
-    for field_name in ("days", "submissions", "out", "n_buildings"):
+    for field_name in ("days", "submissions", "out"):
         value = getattr(args, field_name, None)
         if value is not None:
             setattr(cfg, field_name, value)
@@ -186,10 +172,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         # A graded run: overlapping claims are a setup error, not a warning.
         cfg.conflict_policy = "error"
         cfg.strict_assignments = bool(cfg.assignments)
-        do_run(cfg, show_defaults=args.show_defaults, cfg_path=args.config)
+        do_run(cfg, show_defaults=args.show_defaults)
         return 0
 
-    do_run(cfg, show_defaults=args.show_defaults, cfg_path=args.config)
+    do_run(cfg, show_defaults=args.show_defaults)
     return 0
 
 

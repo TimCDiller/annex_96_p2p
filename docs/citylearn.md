@@ -84,10 +84,8 @@ filled correctly and anything else is left at zero.
 Work through this once against the real dataset.
 
 - [ ] `CityLearnEnv(schema, central_agent=False)` constructs, and
-      `env.buildings` returns 25. Both the TX and VT schemas define exactly
-      25 buildings, all with `include: true` and all carrying a PV array and
-      a battery. The dataset folder holds a few more ResStock CSVs than that;
-      the schema is the authority on which are actually used.
+      `env.buildings` has the expected count. CE1 advertises 25 homes; the TX
+      folder contains 26 building CSVs. Confirm which the schema actually uses.
 - [ ] `env.observation_names[0]` contains the names the adapter looks for:
       `indoor_dry_bulb_temperature`, `non_shiftable_load`, `solar_generation`,
       `electrical_storage_soc`, `outdoor_dry_bulb_temperature`, `hour`.
@@ -112,8 +110,8 @@ Work through this once against the real dataset.
 
 ## Sizing the market
 
-CE1's 25 homes support a much larger cohort than the mock backend's 12.
-With 5 buildings each that is five teams; with 2 each, twelve and one spare.
+CE1's 25–26 homes support a much larger cohort than the mock backend's 12.
+With 5 buildings each that is five teams; with 2 each, twelve.
 
 Whatever you choose, **make the partitions deliberately unequal**. Stratify
 the homes by PV-to-load ratio, battery capacity and thermal mass, then hand

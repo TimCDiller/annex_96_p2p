@@ -94,56 +94,31 @@ ARCHETYPES = [
 ]
 
 
-def default_neighbourhood(n_per_archetype: int = 3,
-                          n_buildings: Optional[int] = None) -> List[BuildingSpec]:
-    """Build a deterministic, heterogeneous set of buildings.
-
-    Pass `n_buildings` for an exact count -- archetypes keep cycling in the
-    same order, so any count works and B01/B05/B09/... stay solar-rich
-    whatever the size. This is how you match the real Annex 96 Common
-    Exercise 1 neighbourhood, which has 25 homes:
-
-        default_neighbourhood(n_buildings=25)
-
-    A lab designed at that size transfers to the CityLearn backend with the
-    same building count and the same `assignments:` block. Note that 25 is
-    not a multiple of four, so the archetypes come out slightly uneven --
-    seven solar-rich and six of each of the others.
-
-    `n_per_archetype` is the older way of asking for the same thing and is
-    kept because it reads better when you do want a balanced count. It is
-    ignored when `n_buildings` is given.
-    """
-    # `is not None`, not a truth test: n_buildings=0 must raise below rather
-    # than silently fall back to the default neighbourhood size.
-    total = (int(n_buildings) if n_buildings is not None
-             else int(n_per_archetype) * len(ARCHETYPES))
-    if total < 1:
-        raise ValueError("need at least one building, got %r" % total)
-    width = max(2, len(str(total)))
-
+def default_neighbourhood(n_per_archetype: int = 3) -> List[BuildingSpec]:
+    """Build a deterministic, heterogeneous set of buildings."""
     specs: List[BuildingSpec] = []
-    for index in range(1, total + 1):
-        archetype, load, pv, bat_kwh, bat_kw, cap, hp = ARCHETYPES[(index - 1)
-                                                                   % len(ARCHETYPES)]
-        # Deterministic spread so buildings of one archetype still differ.
-        jitter = 1.0 + 0.12 * np.sin(index * 1.7)
-        specs.append(BuildingSpec(
-            name="B%0*d" % (width, index),
-            archetype=archetype,
-            load_peak_kw=round(load * jitter, 3),
-            pv_kwp=round(pv * jitter, 3),
-            battery_capacity_kwh=round(bat_kwh * jitter, 3),
-            battery_power_kw=round(bat_kw * jitter, 3),
-            thermal_capacitance=round(cap * jitter, 3),
-            thermal_resistance=6.0,
-            hp_thermal_kw=hp,
-            hp_cop=3.2,
-            solar_gain_kw=round(1.1 * jitter, 3),
-            internal_gain_kw=0.3,
-            comfort_low=22.0,
-            comfort_high=26.0,
-        ))
+    index = 0
+    for rep in range(n_per_archetype):
+        for archetype, load, pv, bat_kwh, bat_kw, cap, hp in ARCHETYPES:
+            index += 1
+            # Deterministic spread so buildings of one archetype still differ.
+            jitter = 1.0 + 0.12 * np.sin(index * 1.7)
+            specs.append(BuildingSpec(
+                name="B%02d" % index,
+                archetype=archetype,
+                load_peak_kw=round(load * jitter, 3),
+                pv_kwp=round(pv * jitter, 3),
+                battery_capacity_kwh=round(bat_kwh * jitter, 3),
+                battery_power_kw=round(bat_kw * jitter, 3),
+                thermal_capacitance=round(cap * jitter, 3),
+                thermal_resistance=6.0,
+                hp_thermal_kw=hp,
+                hp_cop=3.2,
+                solar_gain_kw=round(1.1 * jitter, 3),
+                internal_gain_kw=0.3,
+                comfort_low=22.0,
+                comfort_high=26.0,
+            ))
     specs.sort(key=lambda s: s.name)
     return specs
 
