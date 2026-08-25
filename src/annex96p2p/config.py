@@ -14,6 +14,10 @@ class Config:
     backend: str = "mock"                  # "mock" or "citylearn"
     days: int = 7
     n_per_archetype: int = 3               # mock backend: 4 archetypes x this
+    # Exact building count, overriding n_per_archetype. Set this to 25 to
+    # match the real Annex 96 Common Exercise 1 neighbourhood, so a lab
+    # designed on the mock backend transfers to CityLearn unchanged.
+    n_buildings: Optional[int] = None
     citylearn_dataset: str = "annex96_ce1_tx_neighborhood"
     citylearn_schema: Optional[str] = None
 

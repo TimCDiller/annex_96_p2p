@@ -317,6 +317,23 @@ better discussion but means scores are not perfectly like-for-like. If you
 want them comparable, rotate the assignment between labs and average — do not
 flatten the portfolios to fix it.
 
+### Matching the real neighbourhood
+
+The real Annex 96 CE1 dataset has **25 homes** (both the Texas and Vermont
+schemas define exactly 25, all with PV and a battery). The mock backend
+defaults to 12, but takes any exact count:
+
+```bash
+python -m annex96p2p run --config config/ce1_scale.yaml   # 25 buildings, 5 teams
+python -m annex96p2p buildings --n-buildings 25
+```
+
+[`config/ce1_scale.yaml`](config/ce1_scale.yaml) ships a worked five-team
+partition at that size — 553 kWh traded over a week, clearing in 46% of hours.
+Designing a lab there means the building count and the `assignments:` block
+carry over to the CityLearn backend unchanged; only the building names need
+remapping, since CityLearn uses the ResStock ids.
+
 Student code is called inside a guard: exceptions, malformed bids, wrong-length
 vectors, NaNs and junk return values are all repaired or substituted, counted,
 and reported. One broken submission cannot take down a tournament run.

@@ -249,6 +249,15 @@ def build_participants(backend, submissions_folder, default_agent: str = "rbc",
         for participant in participants:
             allowed = assignments.get(participant.name)
             if allowed is None:
+                # A submission whose NAME is not in the assignment table.
+                # Harmless while a student is experimenting locally, but
+                # under strict assignments it is a way to escape your
+                # allocation just by renaming yourself, so it must fail.
+                message = ("%s is not in the assignment table (known: %s)"
+                           % (participant.name, sorted(assignments)))
+                if strict_assignments:
+                    raise SubmissionError(message)
+                report.conflicts.append(message)
                 continue
             stray = [b for b in participant.buildings if b not in allowed]
             if stray:
