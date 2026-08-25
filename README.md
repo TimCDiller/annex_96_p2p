@@ -11,6 +11,17 @@ tracking a flat reference load. This version changes two things:
 2. **Each student controls only a subset of the buildings**, and everyone
    trades energy with each other in a peer-to-peer market.
 
+**Reading order if you are writing a submission:** [Quick start](#quick-start)
+→ [Submission rules](#submission-rules) →
+[How the market works](#how-the-market-works) →
+[Writing a submission](#writing-a-submission) → [The API in full](#the-api-in-full).
+Then [Debugging your agent](#debugging-your-agent) when something looks wrong,
+and [The default agent, and how to beat it](#the-default-agent-and-how-to-beat-it)
+when it works but is not winning.
+
+Run `python examples/explain_market.py` first — it walks one market clearing
+through in real numbers and is the fastest way to understand the mechanism.
+
 ---
 
 ## Quick start
@@ -44,7 +55,61 @@ own laptop with only your own file present.
 
 ---
 
-## The rules
+## Submission rules
+
+Your submission is **one file** in `submissions/`. Everything below is checked
+either by the runner or by `scripts/scan_submissions.py`, so it is worth
+reading once rather than discovering by rejection.
+
+**It must define, at module level:**
+
+| name | required | meaning |
+|---|---|---|
+| `BUILDINGS` | yes | list of the buildings you control |
+| `AGENT` | yes | your `Agent` subclass, or an instance of it |
+| `NAME` | no | your team name; defaults to the filename |
+
+**It must not:**
+
+- read or write files, or touch the network
+- spawn processes or threads
+- import another submission, or anything beyond `annex96p2p`, `numpy`, and
+  the pure-computation standard library — `math`, `statistics`, `random`,
+  `collections`, `itertools`, `functools`, `heapq`, `bisect`, `dataclasses`,
+  `typing`, `copy`, `enum`, `abc`
+- modify anything inside the `annex96p2p` package
+- run code at import time beyond defining those three names
+- loop forever. Nothing can interrupt you, so an infinite loop stops the
+  whole tournament rather than just your own run.
+
+**And in play:**
+
+- claim only the buildings you were assigned. Actions returned for buildings
+  you do not own are silently discarded.
+- use only the observations you are handed. There is no other legitimate
+  source of information about the market or the other participants.
+- keep each call fast. There are thousands of them per run, and anything over
+  `slow_call_seconds` is flagged in the report.
+- do not crash deliberately. A failing agent is replaced by the default agent
+  for that timestep, which will cost you.
+- files whose name starts with `_` are ignored, so `_scratch.py` is a safe
+  place to experiment without it being loaded as a submission.
+
+Two things are explicitly **allowed**, and are the point of the exercise:
+**strategic bid shading** — you are never obliged to bid your true valuation —
+and **coordinating with another team**, if you do it openly and write about
+what happened.
+
+Check yourself before handing anything in:
+
+```bash
+python -m annex96p2p check submissions/team_yourname.py     # does it load?
+python scripts/scan_submissions.py submissions/team_yourname.py   # is it legal?
+```
+
+---
+
+## How the market works
 
 ### Where the money goes
 
@@ -158,21 +223,162 @@ AGENT = MyAgent
 building is made of. Files starting with `_` are ignored, so `_scratch.py` is
 a safe place to experiment.
 
-### What you get to look at
+---
 
-`obs` is a dict of `BuildingObs`, one per building you control, with named
-fields — no magic indices:
+## The API in full
 
+Three things come in, one goes out. There is nothing else available to you —
+this is the complete surface.
+
+### `obs` — a dict of `BuildingObs`, keyed by building name
+
+One entry per building you control, and nothing at all about the others.
+Named fields, so no magic indices.
+
+| field | unit | meaning |
+|---|---|---|
+| `name` | | building name, e.g. `"B01"` |
+| `timestep` `hour` `day` | | `hour` is 0–23, `day` is 0-based |
+| `outdoor_temperature` | °C | |
+| `solar_irradiance` | 0–1 | fraction of peak |
+| `indoor_temperature` | °C | |
+| `comfort_low` `comfort_high` | °C | edges of the comfort band |
+| `base_load_kwh` | kWh | non-shiftable load **this** timestep |
+| `solar_generation_kwh` | kWh | PV output this timestep; you cannot curtail it |
+| `battery_soc_kwh` | kWh | current charge |
+| `battery_capacity_kwh` | kWh | 0 if this building has no battery |
+| `battery_max_power_kw` | kW | charge/discharge rating |
+| `hp_max_electric_kw` | kW | heat pump draw at full output |
+| `hp_cop` | | coefficient of performance |
+| `last_net_kwh` | kWh | your net energy in the **previous** timestep |
+
+Convenience properties:
+
+| property | meaning |
+|---|---|
+| `passive_net_kwh` | net energy if you leave heat pump and battery idle. **Start here** — positive means you must buy, negative means you have surplus. |
+| `has_battery` `has_pv` | booleans |
+| `comfort_mid` | midpoint of the band |
+| `is_uncomfortable` | currently outside the band |
+
+### `mkt` — a `MarketInfo`
+
+Identical for every participant. Note what is absent: anyone else's bid,
+load, or identity.
+
+| field / method | meaning |
+|---|---|
+| `grid_import_price` | $/kWh you pay the utility this hour — your fallback, and the bid ceiling |
+| `grid_export_price` | $/kWh the utility pays you. `0.0` means unsold surplus is curtailed. |
+| `price_grid` | numpy array of the legal bid prices: `0.00 … grid_import_price` in $0.01 steps |
+| `n_levels` | `len(price_grid)` |
+| `last_clearing_price` | previous hour's clearing price, or `None` if it did not clear |
+| `last_clearing_volume` | kWh traded in the previous hour |
+| `hour` `day` `timestep` | |
+| `empty_bid()` | a zero array of the right length for this hour |
+| `level(price)` | index of the nearest legal price level |
+| `new_bid()` | a `Bid` helper (below) |
+
+### `Bid` — the helper for building a bid vector
+
+```python
+bid = mkt.new_bid()
+bid.buy(price=0.18, quantity=4.0)    # buy up to 4 kWh at $0.18 or cheaper
+bid.sell(price=0.06, quantity=2.0)   # sell up to 2 kWh at $0.06 or dearer
+return bid.array                     # a numpy array of length mkt.n_levels
 ```
-indoor_temperature   comfort_low / comfort_high   outdoor_temperature
-base_load_kwh        solar_generation_kwh         solar_irradiance
-battery_soc_kwh      battery_capacity_kwh         battery_max_power_kw
-hp_max_electric_kw   hp_cop                       last_net_kwh
-passive_net_kwh   <- net energy if you leave everything idle. Start here.
+
+Prices snap to the nearest legal level. Each level holds **one signed
+number**, so buying and selling at the same level cancels out. You may build
+the array yourself instead — positive to buy, negative to sell.
+
+### `result` — a `TradeResult`, passed to `dispatch()` only
+
+| field | meaning |
+|---|---|
+| `price` | the clearing price this hour, or `None` if nothing traded |
+| `quantity` | **your** net position: `> 0` you bought, `< 0` you sold |
+| `traded` | convenience boolean |
+
+### `Action` — what you return, one per building
+
+| field | range | meaning |
+|---|---|---|
+| `hvac` | −1 … +1 | −1 full cooling, 0 off, +1 full heating |
+| `battery` | −1 … +1 | +1 charge at full power, −1 discharge at full power |
+
+Both are **fractions of rated power, not amounts of energy** — the single most
+common source of a mismatch between what you bid and what you consume. Values
+are clipped, and the battery is additionally limited by its state of charge
+and remaining capacity.
+
+---
+
+## Debugging your agent
+
+Every run writes `results/<name>/settlements.csv` — one row per participant
+per hour, and the single source of truth. Every number in the printed report
+is derived from it. Read it when something looks wrong:
+
+```bash
+python -m annex96p2p run --config config/default.yaml
+python -c "import pandas as pd; d = pd.read_csv('results/default/settlements.csv'); \
+print(d[d.participant == 'team_yourname'].head(48).to_string())"
 ```
 
-`Action` has two numbers, both in `[-1, 1]`: `hvac` (negative cools, positive
-heats) and `battery` (positive charges, negative discharges).
+The useful columns are `net_kwh` (what you physically did), `p2p_kwh` (what
+you traded), `grid_import_kwh`, `curtailed_kwh`, `clearing_price`,
+`degree_hours` and `total_cost`.
+
+| symptom in the ledger | what it means |
+|---|---|
+| `curtailed_kwh` is large | you paid for energy you could not use, or had surplus with a full battery. Money thrown away. |
+| `p2p_kwh` and `net_kwh` have **opposite signs** | your bid and your dispatch disagree. This is the classic bug — you declared yourself a buyer and then produced, or vice versa. |
+| `grid_import_kwh` high in cheap hours | your bid did not clear. Either you bid too low, or you did not bid for the energy your heat pump and battery were about to use. |
+| `clearing_price` is empty when you wanted to sell | the market did not cross. Your reserve price was above what anyone would pay. |
+| `degree_hours > 0` | you drifted outside the comfort band, at $3.00 per °C·hour. |
+| `total_cost` > `baseline_cost` | you are doing worse than buying everything from the grid and never trading at all. |
+| your score is above 1.000 | you are losing to the default agent. Compare hour by hour against a run with your file removed. |
+
+The market itself is in `results/<name>/market.csv` — clearing price and
+volume per hour, which is where you look to understand *why* your bid filled
+or did not.
+
+---
+
+## Troubleshooting
+
+**`python` opens the Microsoft Store, or "Python was not found" (Windows).**
+That is the App Execution Alias stub, not Python. Use `py` instead of
+`python` for every command in this README, or install from python.org with
+"Add python.exe to PATH" ticked.
+
+**`No module named annex96p2p`.** You skipped `pip install -e ".[dev]"`, or
+you are in a different virtual environment than the one you installed into,
+or you are not in the repository root. Re-run the install from the root.
+
+**`pip install -e .` fails with a setuptools or backend error.** Upgrade pip
+first: `python -m pip install --upgrade pip`. The build needs
+`setuptools >= 68`.
+
+**`pytest` passes but `python -m annex96p2p` does not.** You are almost
+certainly in the wrong directory — run it from the repository root, where
+`config/` and `submissions/` live.
+
+**My submission is ignored.** Three usual causes: the filename starts with
+`_`; there is no module-level `AGENT` or `BUILDINGS`; or it raised on import.
+`python -m annex96p2p check submissions/team_yourname.py` tells you which.
+
+**"claims buildings that do not exist".** Run
+`python -m annex96p2p buildings` to see the real names and what each one is
+made of.
+
+**No `results/` folder.** Either `save_csv: false` in your config, or you are
+looking in the wrong place — the path comes from `out:` in the config file.
+
+**Everything is very slow.** You are on the CityLearn backend. Set
+`backend: mock` for development; the mock runs a full week in about a tenth of
+a second.
 
 ---
 
@@ -241,6 +447,25 @@ in its git history:
 
 ---
 
+## Before you submit
+
+```
+[ ]  python -m annex96p2p check submissions/team_yourname.py     prints OK
+[ ]  python scripts/scan_submissions.py submissions/team_yourname.py   exits clean
+[ ]  python -m pytest                                            still passes
+[ ]  a full run completes with no WARNINGS section naming your agent
+[ ]  your score is below 1.000
+[ ]  curtailed_kwh is small — you are not paying for energy you discard
+[ ]  degree_hours is small — you are not buying your way out of comfort
+[ ]  BUILDINGS matches what you were assigned, and nothing else
+[ ]  one file, no file I/O, no network, no imports outside the allowlist
+```
+
+A reasonable submission is 60–150 lines. If yours is much longer, most of it
+is probably not earning anything.
+
+---
+
 ## Repository layout
 
 ```
@@ -256,10 +481,12 @@ src/annex96p2p/
   backends/
     mock.py       self-contained building simulator (the default)
     citylearn_backend.py   the real Annex 96 neighbourhood (opt-in)
-submissions/      drop your file here
-config/           smoke.yaml (fast) and default.yaml (a full week)
-examples/         explain_market.py
-tests/            44 tests; run them to verify your checkout
+submissions/      drop your file here; example_team.py is the template
+config/           smoke.yaml (fast), default.yaml (a week), ce1_scale.yaml (25 buildings)
+examples/         explain_market.py, check_partition.py
+scripts/          scan_submissions.py -- the safety scan
+docs/             assignment.md, security.md, citylearn.md
+tests/            77 tests; run them to verify your checkout
 ```
 
 Results land in `results/` as `settlements.csv`, `market.csv` and
