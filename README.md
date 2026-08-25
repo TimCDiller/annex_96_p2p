@@ -338,6 +338,34 @@ Student code is called inside a guard: exceptions, malformed bids, wrong-length
 vectors, NaNs and junk return values are all repaired or substituted, counted,
 and reported. One broken submission cannot take down a tournament run.
 
+### Before you run collected submissions
+
+Those guards protect against **mistakes**, not against **attacks**. A
+submission is a Python file and the runner imports it, so it executes with
+your privileges. There is no sandbox.
+
+```bash
+make scan          # static AST scan, does not import anything
+```
+
+This flags dangerous imports, `eval`/`exec`/`open`, dunder sandbox escapes,
+`setattr` monkey-patching, imports of sibling submissions, `while True` with
+no break, and code that runs at import time. It is a smoke detector, not a
+sandbox.
+
+The actual protection is isolation. Either have students submit by pull
+request so [CI](.github/workflows/ci.yml) runs everything on a throwaway
+runner, or run the tournament in a container:
+
+```bash
+make docker-tournament
+```
+
+**Read [docs/security.md](docs/security.md) before running twenty collected
+files on the machine that holds your gradebook.** It has the full threat
+model, a table of what the guards do and do not stop, and the rules to put in
+the assignment brief.
+
 Everything is deterministic — same submission, same numbers, on any machine.
 
 ### Using the real CityLearn neighbourhood

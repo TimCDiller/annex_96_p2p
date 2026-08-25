@@ -1,4 +1,4 @@
-.PHONY: install smoke run test explain buildings clean
+.PHONY: install smoke run test explain buildings clean scan docker-tournament
 
 install:
 	python -m pip install -e ".[dev]"
@@ -20,3 +20,12 @@ test:
 
 clean:
 	rm -rf results .pytest_cache **/__pycache__
+
+scan:
+	python scripts/scan_submissions.py submissions/
+
+docker-tournament:
+	docker build -t annex96 .
+	docker run --rm --network none --memory 2g --cpus 2 \
+	  -v "$$PWD/submissions:/app/submissions:ro" annex96 \
+	  python -m annex96p2p tournament --config config/default.yaml
