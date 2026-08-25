@@ -1,0 +1,6 @@
+# Minimal runtime dependencies -- these are all pure-wheel installs and take
+# a few seconds on Windows, macOS and Linux alike.
+numpy>=1.23
+pandas>=1.5
+pyyaml>=6.0
+pytest>=7.0

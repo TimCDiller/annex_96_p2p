@@ -1,0 +1,19 @@
+# Fast sanity run. This is what `make smoke` uses.
+# 2 days x 12 buildings finishes in well under a second, so the very first
+# thing you do after cloning gives you an answer immediately.
+backend: mock
+days: 2
+n_per_archetype: 3
+
+submissions: submissions
+default_agent: rbc
+unclaimed_mode: individual
+conflict_policy: first
+
+export_price: 0.0        # CE1 rule kept: no export to the grid
+comfort_price: 3.0       # $ per degC-hour outside the comfort band
+price_step: 0.01         # bid price resolution
+delivery_adder: 0.075
+
+out: results/smoke
+save_csv: true

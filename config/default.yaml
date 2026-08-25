@@ -1,0 +1,67 @@
+# The standard assignment run: one full week.
+backend: mock
+days: 7
+n_per_archetype: 3
+
+submissions: submissions
+default_agent: rbc          # rbc | pricetaker | nothing
+unclaimed_mode: individual  # individual | pooled
+conflict_policy: first      # first | error  (the tournament forces "error")
+
+# --- prices ----------------------------------------------------------------
+# Leave price_csv empty to use the built-in synthetic ERCOT-like summer
+# series. To use real data instead, point price_csv at a CSV with an
+# "electricity_pricing" column, one row per hour.
+price_csv:
+delivery_adder: 0.075       # $/kWh added to wholesale to make the retail price
+price_volatility: 0.15      # day-to-day variation
+export_price: 0.0           # 0.0 keeps the CE1 no-grid-export rule
+comfort_price: 3.0          # $ per degC-hour outside the comfort band
+price_step: 0.01            # bid price resolution
+
+# --- guard rails -----------------------------------------------------------
+max_bid_kwh: 500.0
+slow_call_seconds: 1.0
+seed: 0
+
+# --- instructor: pin the partition -----------------------------------------
+# Uncomment for a graded tournament. With strict_assignments on, a submission
+# that claims a building it was not assigned is an error rather than a warning.
+#
+# SPECIALISE THE PORTFOLIOS. This is the setting most likely to break the
+# exercise if you get it wrong, and the intuitive choice is the wrong one.
+#
+# Giving each team "one of each archetype" feels fair and complementary. It
+# is also what kills the market: a team that can balance itself internally
+# will, and should, because moving energy between two buildings you already
+# own is free and never touches the market. Measured over one week with the
+# same default agent on the same twelve buildings:
+#
+#   each team one archetype     328 kWh traded    $42 of value created
+#   a dominant archetype each   199 kWh traded    $25
+#   one of each archetype        23 kWh traded     $2      <- market is dead
+#
+# Run `python examples/check_partition.py` to reproduce that, and to test
+# any partition of your own before you hand it out.
+#
+# The buildings cycle through the four archetypes in order, so B01/B05/B09
+# are all solar-rich, B02/B06/B10 all storage-rich, and so on.
+#
+# strict_assignments: true
+# assignments:
+#   solar_team:    [B01, B05, B09]   # all PV, no storage -> structural seller
+#   storage_team:  [B02, B06, B10]   # all battery, no PV -> arbitrageur
+#   mass_team:     [B03, B07, B11]   # heavy fabric only  -> flexible load
+#   balanced_team: [B04, B08, B12]   # some of both
+#
+# Note that these four face genuinely different problems, which is realistic
+# and makes for a better discussion, but does mean the scores are not quite
+# like-for-like. If you want them comparable, rotate the assignment between
+# labs and average, rather than flattening the portfolios.
+#
+# Also: more participants means a deeper market. Twelve students holding one
+# building each trade about as much as four teams of three, because every
+# ownership boundary is a boundary energy has to cross by trading.
+
+out: results/default
+save_csv: true
