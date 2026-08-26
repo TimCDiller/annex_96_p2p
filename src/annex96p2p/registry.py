@@ -47,7 +47,14 @@ class Participant:
     buildings: List[str]
     is_default: bool = False
     source: Optional[str] = None
+    #: calls that raised and were replaced by the default agent
     failures: int = 0
+    #: calls that overran `call_timeout_seconds` and got an empty bid
+    timeouts: int = 0
+    #: cumulative wall-clock seconds spent inside this participant's code
+    seconds: float = 0.0
+    #: set when `run_budget_seconds` is exhausted; no further calls are made
+    disqualified: bool = False
 
     def __repr__(self) -> str:
         kind = "default" if self.is_default else "submission"
@@ -122,6 +129,10 @@ def discover(folder, valid_buildings: Sequence[str],
         return participants, report
 
     valid = set(valid_buildings)
+
+    # So load_weights() can find checkpoints sitting next to the submissions.
+    from .weights import register_search_dir
+    register_search_dir(folder)
 
     for path in sorted(folder.glob("*.py")):
         if path.stem.startswith("_"):

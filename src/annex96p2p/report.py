@@ -109,15 +109,42 @@ def hourly_market_text(result: RunResult, day: int = 0) -> str:
     return "\n".join(lines)
 
 
+def compute_text(result: RunResult) -> str:
+    """Per-participant compute use, timeouts and disqualifications."""
+    rows = [p for p in result.participants if not p.is_default]
+    rows = rows or list(result.participants)
+    if not rows:
+        return ""
+    lines = [RULE, "COMPUTE", RULE,
+             "  participant           seconds   timeouts   raised   status"]
+    for p in sorted(rows, key=lambda x: -x.seconds):
+        status = ("DISQUALIFIED" if p.disqualified
+                  else "over budget" if p.timeouts else "ok")
+        lines.append("  %-20s %8.2f %10d %8d   %s"
+                     % (p.name[:20], p.seconds, p.timeouts, p.failures, status))
+    lines.append(THIN)
+    lines.append("a timeout gets an empty bid for that timestep; exhausting the "
+                 "per-run budget")
+    lines.append("disqualifies the participant for the remainder of the run.")
+    return "\n".join(lines)
+
+
 def warnings_text(result: RunResult) -> str:
     warnings = result.ledger.warnings
-    failures = [p for p in result.participants if p.failures]
+    failures = [p for p in result.participants if p.failures or p.timeouts
+                or p.disqualified]
     if not warnings and not failures and not result.slow_calls:
         return ""
     lines = [RULE, "WARNINGS", RULE]
     for participant in failures:
-        lines.append("  %s: %d failed agent calls (default agent substituted)"
-                     % (participant.name, participant.failures))
+        bits = []
+        if participant.failures:
+            bits.append("%d raised (default agent substituted)" % participant.failures)
+        if participant.timeouts:
+            bits.append("%d timed out (empty bid substituted)" % participant.timeouts)
+        if participant.disqualified:
+            bits.append("DISQUALIFIED, over the per-run compute budget")
+        lines.append("  %s: %s" % (participant.name, "; ".join(bits)))
     for message in warnings[:20]:
         lines.append("  " + message.replace("\n", "\n    "))
     if len(warnings) > 20:
@@ -131,6 +158,7 @@ def full_report(result: RunResult, show_defaults: bool = False) -> str:
     parts = [leaderboard_text(result, show_defaults=show_defaults),
              system_text(result),
              hourly_market_text(result, day=0),
+             compute_text(result),
              warnings_text(result)]
     return "\n\n".join(p for p in parts if p)
 

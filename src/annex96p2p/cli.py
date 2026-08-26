@@ -66,7 +66,9 @@ def do_run(cfg: Config, show_defaults: bool, quiet: bool = False,
             print()
 
     result = simulate(backend, participants, tariff, max_bid_kwh=cfg.max_bid_kwh,
-                      slow_call_seconds=cfg.slow_call_seconds)
+                      slow_call_seconds=cfg.slow_call_seconds,
+                      call_timeout_seconds=cfg.call_timeout_seconds,
+                      run_budget_seconds=cfg.run_budget_seconds)
 
     if cfg.reference:
         # Second pass: the same building groups, all run by the default

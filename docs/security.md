@@ -40,7 +40,7 @@ there are tests for it.
 | `os.system(...)`, file deletion, network calls | runs at import or inside the call; nothing intercepts it |
 | reading your files, your other students' submissions, your solutions | ordinary file I/O |
 | monkey-patching `market.clear` or the ledger | the submission can import package internals and rebind them |
-| an infinite loop | `_timed` measures elapsed time **after** the call returns, so a hang is never detected — the tournament simply stops |
+| an infinite loop | bounded now, but not cured: `call_timeout_seconds` abandons the call and substitutes an empty bid, and `run_budget_seconds` disqualifies the participant. Python cannot kill the thread, so the abandoned call keeps burning CPU and the run degrades. |
 | `sys.exit()` / `os._exit()` | the guard catches `Exception`, not `SystemExit` |
 | exhausting memory | no limit |
 | code that runs at import time | executes before any guard exists |
@@ -58,10 +58,18 @@ python scripts/scan_submissions.py submissions/
 make scan
 ```
 
-This parses each file with `ast` **without importing it** and flags dangerous
-imports, `eval`/`exec`/`open`, dunder-attribute sandbox escapes, `setattr`
-monkey-patching, imports of sibling submissions, `while True` with no break,
-and code that runs at import time. It exits non-zero if anything is blocking.
+This parses each file with `ast` **without importing it** and reports what it
+touches: filesystem, network, subprocesses, dynamic code, unpickling, sandbox
+escapes, uninterruptible loops, import-time side effects. It also lists every
+library imported.
+
+Note what it is not. **There is no import allowlist** — students may use any
+library they like, and nothing is blocked. It exits 0 unless a file genuinely
+will not load; `--strict` makes any note fail if you want that in CI.
+
+The intended use is twofold: read it before you execute someone's code, and
+use it as a prompt list for the viva. The actual check on a submission is that
+its author has to explain it; this just tells you what to ask about.
 
 It is a smoke detector, not a sandbox — a determined student can evade a
 static scan. A clean report means "nothing obvious", never "safe to run".
@@ -109,33 +117,41 @@ rather than the physics.
 Put this in the assignment brief, because a rule nobody stated is a rule
 nobody follows:
 
-> Your submission is a single file that imports only `annex96p2p`, `numpy`
-> and the Python standard library's pure-computation modules. It must not
-> read or write files, use the network, spawn processes, import another
-> submission, modify anything in the `annex96p2p` package, or run code at
-> import time beyond defining `BUILDINGS`, `NAME` and `AGENT`. Anything that
-> makes the tournament hang or crash scores zero.
+> Use any libraries you like. Your submission is a single file (plus a
+> weights file if you trained something) that defines `BUILDINGS`, `NAME` and
+> `AGENT`, builds anything expensive in `reset()` rather than at import time,
+> acts only on the buildings assigned to you and only on the observations you
+> are given, and stays inside the published compute limits. You will be asked
+> to explain, in your report and in person, what your agent does and why —
+> a result you cannot account for scores nothing.
 
 ### 5. Cap the run
 
 In your tournament config:
 
 ```yaml
-max_bid_kwh: 500.0        # clips absurd bid quantities
-slow_call_seconds: 0.25   # lowers the bar for the "slow" report
+max_bid_kwh: 500.0          # clips absurd bid quantities
+call_timeout_seconds: 2.0   # per call; overrun gets an empty bid
+run_budget_seconds: 60.0    # per participant per run; overrun disqualifies
+slow_call_seconds: 0.25     # softer: reports without substituting
 ```
 
-Then wrap the whole thing in an external timeout so a hang is bounded rather
-than infinite:
+`call_timeout_seconds` and `run_budget_seconds` are real enforcement — see the
+COMPUTE section of the report for who used what. Tighten them for a graded run
+once you know what legitimate submissions cost; the shipped example uses about
+0.02 s for a whole week.
+
+They are not a complete answer, because Python cannot kill a running thread.
+An overrunning call is abandoned rather than terminated, so it keeps consuming
+CPU and intermittently holding the GIL. The per-run budget stops it being
+re-entered every timestep, which turns a hang into a slow run rather than a
+dead one. A genuinely hard limit needs one process per agent.
+
+So still wrap the whole thing:
 
 ```bash
-timeout 600 python -m annex96p2p tournament --config config/default.yaml
+timeout 900 python -m annex96p2p tournament --config config/default.yaml
 ```
-
-`slow_call_seconds` only *reports*; the external `timeout` is what actually
-saves you. A true per-call timeout needs a subprocess or a signal, neither of
-which is portable across Windows and POSIX, which is why the runner does not
-attempt it.
 
 ## Cheating, as distinct from attacking
 

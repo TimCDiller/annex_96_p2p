@@ -46,6 +46,27 @@ class Config:
 
     # -- guard rails --------------------------------------------------------
     max_bid_kwh: float = 500.0             # per price level, per participant
+
+    # How long a single bid() or dispatch() call may take. Overrunning gets
+    # you an EMPTY BID (or idle actions) for that timestep, and is flagged in
+    # the report. 0 disables the timeout entirely.
+    #
+    # Set this generously: a torch forward pass is milliseconds, but the first
+    # call of a run also pays for lazy imports and any model construction in
+    # reset(). 2-5 s is roomy for inference; lower it for a graded tournament
+    # once you know what legitimate submissions actually cost.
+    call_timeout_seconds: float = 5.0
+
+    # Total wall-clock seconds a single participant may spend across the WHOLE
+    # run, summed over every call. Exhausting it disqualifies that participant
+    # for the remainder: empty bids, idle actions, agent never invoked again.
+    # This is what bounds a submission that hangs, because an abandoned thread
+    # cannot be killed and would otherwise be re-entered every timestep.
+    # 0 disables the budget.
+    run_budget_seconds: float = 120.0
+
+    # Softer than the timeout: calls slower than this are listed in the
+    # report without being substituted.
     slow_call_seconds: float = 1.0
     seed: int = 0
 

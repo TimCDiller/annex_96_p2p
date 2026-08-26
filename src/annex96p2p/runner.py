@@ -21,6 +21,7 @@ is counted and reported, and the run continues.
 """
 from __future__ import annotations
 
+import threading
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -67,55 +68,158 @@ class RunResult:
         return self.ledger.system_summary()
 
 
-class _Guard:
-    """Calls participant code, substituting the default agent on failure."""
+TIMED_OUT = object()      # sentinel: the call did not finish in time
 
-    def __init__(self, ledger: Ledger, slow_call_seconds: float = 1.0):
+
+class _Guard:
+    """Calls participant code and contains what it does wrong.
+
+    Three separate failure modes, with three different consequences:
+
+      raises            the default agent stands in for that timestep, so a
+                        buggy submission still behaves sensibly
+      exceeds the       an EMPTY BID (or idle actions) is substituted. A
+      per-call timeout  timeout is a resource violation rather than a bug, so
+                        it is not rescued by the default agent -- the
+                        participant simply does not trade that hour
+      exceeds the       the participant is disqualified for the rest of the
+      per-run budget    run and every later call returns an empty bid without
+                        the agent being invoked at all
+
+    All three are counted and reported.
+
+    On the timeout mechanism: the call runs on a daemon thread which is
+    abandoned if it overruns. Python cannot kill a thread, so an abandoned
+    call keeps consuming CPU and intermittently holding the GIL -- the run
+    degrades rather than hanging. That is why the per-run budget exists: it
+    stops a spinning agent being re-invoked hundreds more times. For hard
+    isolation you need a process per agent; see docs/security.md.
+    """
+
+    def __init__(self, ledger: Ledger, slow_call_seconds: float = 1.0,
+                 call_timeout_seconds: float = 0.0,
+                 run_budget_seconds: float = 0.0):
         self.ledger = ledger
         self.slow_call_seconds = slow_call_seconds
+        self.call_timeout_seconds = float(call_timeout_seconds or 0.0)
+        self.run_budget_seconds = float(run_budget_seconds or 0.0)
         self.slow: List[str] = []
         self._fallback = SimpleRBCAgent(name="__fallback__", buildings=[])
         self._reported = set()
 
+    # ------------------------------------------------------------- reporting
+    def _once(self, key, message: str) -> None:
+        if key not in self._reported:
+            self._reported.add(key)
+            self.ledger.warn(message)
+
     def _note(self, participant: Participant, what: str) -> None:
         participant.failures += 1
-        key = (participant.name, what)
-        if key not in self._reported:          # report each failure mode once
-            self._reported.add(key)
-            self.ledger.warn("%s: %s failed, default agent substituted\n%s"
-                             % (participant.name, what,
-                                traceback.format_exc(limit=4)))
+        self._once((participant.name, what, "raise"),
+                   "%s: %s raised, default agent substituted for that timestep\n%s"
+                   % (participant.name, what, traceback.format_exc(limit=4)))
 
-    def _timed(self, participant: Participant, what: str, fn, *args):
+    def _note_timeout(self, participant: Participant, what: str,
+                      timestep, empty_what: str) -> None:
+        participant.timeouts += 1
+        self._once((participant.name, what, "timeout"),
+                   "%s: %s exceeded the %.3gs call timeout (first at timestep %s); "
+                   "%s substituted. Total timeouts are in the report."
+                   % (participant.name, what, self.call_timeout_seconds,
+                      timestep, empty_what))
+
+    def _charge(self, participant: Participant, elapsed: float, timestep) -> None:
+        """Add to the participant's cumulative budget, disqualify if over."""
+        participant.seconds += elapsed
+        if (self.run_budget_seconds > 0 and not participant.disqualified
+                and participant.seconds > self.run_budget_seconds):
+            participant.disqualified = True
+            self.ledger.warn(
+                "%s: DISQUALIFIED at timestep %s -- used %.2fs of compute, over the "
+                "%.3gs per-run budget. Empty bids and idle actions for the remainder."
+                % (participant.name, timestep, participant.seconds,
+                   self.run_budget_seconds))
+
+    # ------------------------------------------------------------ the call
+    def _call(self, participant: Participant, what: str, fn, args, timestep):
+        """Run `fn(*args)`, bounded by the per-call timeout.
+
+        Returns the value, or the TIMED_OUT sentinel. Exceptions raised inside
+        the call propagate, so the existing handling still applies.
+        """
+        timeout = self.call_timeout_seconds
         started = time.perf_counter()
-        value = fn(*args)
+
+        if timeout <= 0:                       # timeout disabled: call directly
+            try:
+                return fn(*args)
+            finally:
+                self._after(participant, what,
+                            time.perf_counter() - started, timestep)
+
+        box: Dict[str, object] = {}
+
+        def target():
+            try:
+                box["value"] = fn(*args)
+            except BaseException as exc:       # noqa: BLE001
+                box["error"] = exc
+
+        thread = threading.Thread(target=target, daemon=True,
+                                  name="agent-%s-%s" % (participant.name, what))
+        thread.start()
+        thread.join(timeout)
         elapsed = time.perf_counter() - started
+        self._after(participant, what, elapsed, timestep)
+
+        if thread.is_alive():
+            return TIMED_OUT
+        if "error" in box:
+            raise box["error"]                 # type: ignore[misc]
+        return box.get("value")
+
+    def _after(self, participant, what, elapsed, timestep) -> None:
         if elapsed > self.slow_call_seconds:
             self.slow.append("%s.%s took %.2fs at timestep %s"
-                             % (participant.name, what, elapsed, args[-1]))
-        return value
+                             % (participant.name, what, elapsed, timestep))
+        self._charge(participant, elapsed, timestep)
 
+    # -------------------------------------------------------------------- bid
     def bid(self, participant: Participant, obs, mkt: MarketInfo,
             max_kwh: float) -> np.ndarray:
-        try:
-            raw = self._timed(participant, "bid", participant.agent.bid, obs, mkt)
-        except Exception:                                        # noqa: BLE001
-            self._note(participant, "bid")
-            self._fallback.buildings = participant.buildings
+        if participant.disqualified:
+            raw = mkt.empty_bid()
+        else:
             try:
-                raw = self._fallback.bid(obs, mkt)
+                raw = self._call(participant, "bid", participant.agent.bid,
+                                 (obs, mkt), mkt.timestep)
+                if raw is TIMED_OUT:
+                    self._note_timeout(participant, "bid", mkt.timestep, "an empty bid")
+                    raw = mkt.empty_bid()
             except Exception:                                    # noqa: BLE001
-                raw = mkt.empty_bid()
+                self._note(participant, "bid")
+                self._fallback.buildings = participant.buildings
+                try:
+                    raw = self._fallback.bid(obs, mkt)
+                except Exception:                                # noqa: BLE001
+                    raw = mkt.empty_bid()
         array, notes = validate_bid(raw, mkt.n_levels, max_kwh, participant.name)
         for note in notes:
             self.ledger.warn(note)
         return array
 
+    # --------------------------------------------------------------- dispatch
     def dispatch(self, participant: Participant, obs, mkt: MarketInfo,
                  result: TradeResult) -> Dict[str, Action]:
+        if participant.disqualified:
+            return {name: Action() for name in participant.buildings}
         try:
-            actions = self._timed(participant, "dispatch", participant.agent.dispatch,
-                                  obs, mkt, result)
+            actions = self._call(participant, "dispatch", participant.agent.dispatch,
+                                 (obs, mkt, result), mkt.timestep)
+            if actions is TIMED_OUT:
+                self._note_timeout(participant, "dispatch", mkt.timestep,
+                                   "idle actions")
+                actions = {}
         except Exception:                                        # noqa: BLE001
             self._note(participant, "dispatch")
             self._fallback.buildings = participant.buildings
@@ -144,7 +248,9 @@ class _Guard:
 
 def simulate(backend: Backend, participants: List[Participant], tariff: Tariff,
              max_bid_kwh: float = 500.0, progress: bool = False,
-             slow_call_seconds: float = 1.0) -> RunResult:
+             slow_call_seconds: float = 1.0,
+             call_timeout_seconds: float = 0.0,
+             run_budget_seconds: float = 0.0) -> RunResult:
     """Run the whole simulation and return the ledger."""
     backend.reset()
     for participant in participants:
@@ -154,7 +260,9 @@ def simulate(backend: Backend, participants: List[Participant], tariff: Tariff,
             pass
 
     ledger = Ledger()
-    guard = _Guard(ledger, slow_call_seconds=slow_call_seconds)
+    guard = _Guard(ledger, slow_call_seconds=slow_call_seconds,
+                   call_timeout_seconds=call_timeout_seconds,
+                   run_budget_seconds=run_budget_seconds)
     started = time.perf_counter()
 
     last_price: Optional[float] = None

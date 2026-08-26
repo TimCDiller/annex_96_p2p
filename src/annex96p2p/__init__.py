@@ -28,6 +28,7 @@ from .market import Clearing, build_price_grid, clear, describe
 from .registry import Participant, build_participants
 from .runner import RunResult, simulate
 from .tariff import Tariff
+from .weights import load_weights
 
 __version__ = "0.1.0"
 
@@ -37,5 +38,5 @@ __all__ = [
     "Config", "Ledger", "Settlement",
     "Clearing", "clear", "build_price_grid", "describe",
     "Participant", "build_participants",
-    "RunResult", "simulate", "Tariff",
+    "RunResult", "simulate", "Tariff", "load_weights",
 ]

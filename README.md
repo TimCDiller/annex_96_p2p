@@ -69,31 +69,62 @@ reading once rather than discovering by rejection.
 | `AGENT` | yes | your `Agent` subclass, or an instance of it |
 | `NAME` | no | your team name; defaults to the filename |
 
-**It must not:**
+### Use whatever libraries you like
 
-- read or write files, or touch the network
-- spawn processes or threads
-- import another submission, or anything beyond `annex96p2p`, `numpy`, and
-  the pure-computation standard library — `math`, `statistics`, `random`,
-  `collections`, `itertools`, `functools`, `heapq`, `bisect`, `dataclasses`,
-  `typing`, `copy`, `enum`, `abc`
-- modify anything inside the `annex96p2p` package
-- run code at import time beyond defining those three names
-- loop forever. Nothing can interrupt you, so an infinite loop stops the
-  whole tournament rather than just your own run.
+**There is no restriction on what you may import.** PyTorch, TensorFlow,
+JAX, scikit-learn, XGBoost, Gymnasium, stable-baselines3, CVXPY — train a
+policy, fit a forecaster, solve an MPC problem, whatever you want to build.
+There are optional extras for the common cases:
 
-**And in play:**
+```bash
+pip install -e ".[ml]"      # torch, scikit-learn, safetensors
+pip install -e ".[rl]"      # torch, gymnasium, stable-baselines3, safetensors
+```
 
-- claim only the buildings you were assigned. Actions returned for buildings
-  you do not own are silently discarded.
-- use only the observations you are handed. There is no other legitimate
-  source of information about the market or the other participants.
-- keep each call fast. There are thousands of them per run, and anything over
-  `slow_call_seconds` is flagged in the report.
-- do not crash deliberately. A failing agent is replaced by the default agent
-  for that timestep, which will cost you.
-- files whose name starts with `_` are ignored, so `_scratch.py` is a safe
-  place to experiment without it being loaded as a submission.
+They are extras rather than dependencies so a plain clone still installs in
+seconds.
+
+### The real requirement: you have to explain it
+
+The bar is not that your agent scores well. It is that **you can explain what
+it does and why, out loud and in writing.** A score you cannot account for is
+worth nothing.
+
+So expect to answer, about your own submission:
+
+- what your bid curve represents, and why it has the shape it has
+- why your agent buys or sells at a particular hour, in terms of the physics
+  and the prices rather than "the model decided"
+- where its remaining losses are, and what you would do next
+- if you trained something: what the state and reward were, what it learned
+  that a rule could not have expressed, and how you know it is not just
+  memorising the price series
+
+A hand-written 40-line rule you fully understand is a better submission than
+a black box that scores marginally lower and that you cannot account for. If
+you use a learned policy, you are responsible for being able to say what it
+learned.
+
+### Practical constraints
+
+Not restrictions on your toolkit — just what the runner needs in order to
+work:
+
+- **claim only the buildings you were assigned.** Actions returned for
+  buildings you do not own are silently discarded.
+- **use only the observations you are handed.** Reaching for information the
+  firewall does not give you is not a technical impossibility, it is
+  academic dishonesty, and it will be obvious the moment you have to explain
+  your agent.
+- **build your model in `reset()`, not at import time.** Module-level code
+  runs before any guard exists.
+- **stay inside the compute limits below.** These are enforced.
+- **prefer `.npz` or `.safetensors` to a pickled checkpoint** — see
+  [Shipping a trained model](#shipping-a-trained-model). Not a prohibition:
+  a `.pt` file executes code when loaded and nobody can read it, so it is a
+  courtesy to whoever runs your submission and to whoever has to review it.
+- **files starting with `_` are ignored**, so `_scratch.py` is a safe place
+  to experiment.
 
 Two things are explicitly **allowed**, and are the point of the exercise:
 **strategic bid shading** — you are never obliged to bid your true valuation —
@@ -104,8 +135,67 @@ Check yourself before handing anything in:
 
 ```bash
 python -m annex96p2p check submissions/team_yourname.py     # does it load?
-python scripts/scan_submissions.py submissions/team_yourname.py   # is it legal?
+python scripts/scan_submissions.py submissions/team_yourname.py   # what does it do?
 ```
+
+The scan is a **report, not a gate** — it lists what your file touches
+(filesystem, network, dynamic code) so whoever runs it knows what to expect,
+and so those choices come up when you present. It blocks nothing.
+
+### How much compute you get
+
+Two limits, both set in the config file, both reported in a **COMPUTE**
+section after every run:
+
+| setting | default | what happens when you exceed it |
+|---|---:|---|
+| `call_timeout_seconds` | 5.0 | that single `bid()` or `dispatch()` gets an **empty bid** (or idle actions) and is flagged. The run continues. |
+| `run_budget_seconds` | 120.0 | you are **disqualified for the rest of the run** — empty bids, idle actions, and your agent is not called again. |
+
+For scale: the shipped example agent uses about **0.02 seconds in total** for a
+whole simulated week. A small neural net doing inference twice per timestep is
+still nowhere near either limit. The 5-second per-call figure is deliberately
+roomy because the *first* call also pays for importing torch and building your
+model.
+
+What will get you into trouble is training during the run, or an accidental
+infinite loop. Note the asymmetry: a call that **raises** is rescued by the
+default agent, so a crash costs you one timestep of good behaviour. A call
+that **overruns** is not rescued — you get an empty bid, so you simply do not
+trade that hour. Slow is punished harder than broken, on purpose.
+
+The per-run budget exists because a timed-out call cannot actually be killed —
+Python has no way to stop a running thread. The overrunning call is abandoned
+and keeps consuming CPU, so the budget is what stops a spinning agent being
+re-entered for every remaining timestep.
+
+### Shipping a trained model
+
+Put the weights file next to your submission and load it in `reset()`:
+
+```python
+from annex96p2p import Agent, load_weights
+
+class MyAgent(Agent):
+    def reset(self):                       # not at import time
+        w = load_weights("team_yourname.npz")
+        self.W1, self.b1 = w["W1"], w["b1"]
+```
+
+`load_weights` accepts `.npz` and `.safetensors` and resolves the name inside
+`submissions/`, so your agent works whichever directory the run started from.
+Nothing stops you opening a file yourself — this just gets the path right and
+keeps the checkpoint readable. Converting what you trained is two lines:
+
+```python
+import numpy as np, torch
+sd = torch.load("model.pt", map_location="cpu")        # on YOUR machine
+np.savez("submissions/team_yourname.npz",
+         **{k: v.numpy() for k, v in sd.items()})
+```
+
+Then hand in both files. Train offline, keep inference deterministic — seed
+everything, `eval()`, `no_grad()` — so your result reproduces.
 
 ---
 
@@ -458,7 +548,9 @@ in its git history:
 [ ]  curtailed_kwh is small — you are not paying for energy you discard
 [ ]  degree_hours is small — you are not buying your way out of comfort
 [ ]  BUILDINGS matches what you were assigned, and nothing else
-[ ]  one file, no file I/O, no network, no imports outside the allowlist
+[ ]  no COMPUTE timeouts or disqualification in the report
+[ ]  you can explain every decision your agent makes, without
+     saying "the model decided"
 ```
 
 A reasonable submission is 60–150 lines. If yours is much longer, most of it
@@ -478,6 +570,7 @@ src/annex96p2p/
   registry.py     finding submissions, resolving claims, filling the rest
   reference.py    the all-default run that makes scores comparable
   baselines.py    the default agents
+  weights.py      load_weights() -- the sanctioned way to read trained weights
   backends/
     mock.py       self-contained building simulator (the default)
     citylearn_backend.py   the real Annex 96 neighbourhood (opt-in)
