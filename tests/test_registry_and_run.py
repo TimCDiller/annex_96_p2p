@@ -324,26 +324,52 @@ def test_runs_are_deterministic(tmp_path, tariff):
     assert once() == pytest.approx(once())
 
 
-def test_shipped_example_beats_the_default_agent(tmp_path):
-    """The template must not start students off behind the default agent."""
+def test_shipped_examples_beat_the_default_agent(tmp_path):
+    """Neither template may start students off behind the default agent."""
     from pathlib import Path
 
     import annex96p2p
     root = Path(annex96p2p.__file__).resolve().parents[2]
-    example = root / "submissions" / "example_team.py"
-    if not example.exists():
-        pytest.skip("example submission not present")
+    shipped = sorted((root / "submissions").glob("example_*.py"))
+    if not shipped:
+        pytest.skip("no shipped examples present")
 
-    (tmp_path / "example_team.py").write_text(example.read_text(encoding="utf-8"),
-                                              encoding="utf-8")
+    for f in shipped:
+        (tmp_path / f.name).write_text(f.read_text(encoding="utf-8"),
+                                       encoding="utf-8")
+
     backend = MockBackend(n_days=7, specs=default_neighbourhood(3))
     tariff = Tariff.synthetic(backend.n_timesteps, comfort_price=3.0)
-    participants, _ = build_participants(backend, tmp_path)
+    participants, report = build_participants(backend, tmp_path)
+
+    # The examples must not fight over buildings.
+    assert not report.conflicts, report.conflicts
 
     result = simulate(backend, participants, tariff)
     from annex96p2p.reference import attach, reference_costs
     attach(result, reference_costs(backend, participants, tariff))
 
     board = result.leaderboard
-    row = board[board.participant == "example_team"].iloc[0]
-    assert row["score"] < 1.0, "the example submission lost to the default agent"
+    for f in shipped:
+        rows = board[board.participant.str.contains(f.stem.replace("example_", ""),
+                                                     regex=False)]
+        if rows.empty:
+            rows = board[~board.is_default]
+        assert (rows["score"] < 1.0).all(),             "%s loses to the default agent: %s" % (f.name, rows[["participant",
+                                                                "score"]].to_dict())
+
+
+def test_both_examples_are_discovered(tmp_path):
+    from pathlib import Path
+
+    import annex96p2p
+    root = Path(annex96p2p.__file__).resolve().parents[2]
+    shipped = sorted((root / "submissions").glob("example_*.py"))
+    for f in shipped:
+        (tmp_path / f.name).write_text(f.read_text(encoding="utf-8"),
+                                       encoding="utf-8")
+    backend = MockBackend(n_days=1, specs=default_neighbourhood(3))
+    found, report = discover(tmp_path, backend.building_names)
+    assert len(found) == len(shipped), report.render()
+    claimed = [b for p in found for b in p.buildings]
+    assert len(claimed) == len(set(claimed)), "shipped examples claim the same building"

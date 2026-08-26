@@ -517,10 +517,24 @@ it — its weaknesses are the assignment.
   with no reference to price, PV output, or state of charge
 - nothing reacts to the price it just cleared at
 
-The shipped `submissions/example_team.py` scores about **0.94** using only a
-price-aware battery and honest bidding. There is a lot left on the table:
-pre-cooling, forecasting, strategic bid shading, and reasoning about when the
-market will be glutted.
+Two worked examples ship, in deliberately different styles. Read both — they
+fail in different ways.
+
+| file | style | score | what it demonstrates |
+|---|---|---:|---|
+| `example_team.py` | a rule stack — if-statements about the price | ~0.94 | price-aware battery, bid/dispatch consistency |
+| `example_soc_spread.py` | a market maker — quotes around a reservation price | ~0.55 | pricing storable vs perishable energy separately |
+
+`example_soc_spread.py` is worth studying even if you write nothing like it.
+It sets its mid-price at `(1 - state_of_charge) x grid_price` and quotes a
+spread around that, which means it buys the midday glut and sells into the
+evening peak with **no forecast at all** — the inventory does the reasoning.
+It also separates the three positions a portfolio actually holds: must-have
+load, perishable PV surplus, and storable battery charge. Pricing the second
+with the rule meant for the third curtailed 680 kWh in a week.
+
+Both leave a lot on the table: pre-cooling, forecasting, strategic bid
+shading, and reasoning about when the market will be glutted.
 
 Three things worth understanding early, all of which the example gets wrong
 in its git history:
@@ -574,7 +588,7 @@ src/annex96p2p/
   backends/
     mock.py       self-contained building simulator (the default)
     citylearn_backend.py   the real Annex 96 neighbourhood (opt-in)
-submissions/      drop your file here; example_team.py is the template
+submissions/      drop your file here; two example_*.py templates
 config/           smoke.yaml (fast), default.yaml (a week), ce1_scale.yaml (25 buildings)
 examples/         explain_market.py, check_partition.py
 scripts/          scan_submissions.py -- the safety scan
