@@ -114,73 +114,64 @@ class ExampleAgent(Agent):
         available = sum(min(o.battery_max_power_kw, o.battery_soc_kwh)
                         for o in obs.values() if o.has_battery)
 
-        # 1. Always soak up our own surplus first. Energy we generate and do
-        #    not use is curtailed for nothing, so putting it in our own
-        #    battery is free. This never touches the market at all -- it is
-        #    a transfer between two buildings we already own.
-        from_own = min(surplus, headroom)
-
-        # 2. Buy more only when energy is cheap AND the battery is fairly
-        #    empty. Filling it overnight feels clever, but it leaves no room
-        #    for our own solar at midday, and that solar would otherwise be
-        #    curtailed for nothing. Keep space for the free energy.
-        soc = sum(o.battery_soc_kwh for o in obs.values())
-        capacity = sum(o.battery_capacity_kwh for o in obs.values())
-        fairly_empty = capacity > 0 and soc < 0.4 * capacity
-        from_market = (headroom - from_own) if (cheap and fairly_empty) else 0.0
-
-        # 3. Discharge only when energy is expensive, and never more than we
-        #    can consume ourselves.
-        #
-        #    This is the important line. A kWh out of our battery that we
-        #    use ourselves saves us the full grid price. The same kWh sold
-        #    into the market earns only the clearing price, which is capped
-        #    at the grid price and in practice well below it. So always
-        #    self-consume first and only sell what is genuinely spare.
-        discharge = min(available, max(0.0, passive)) if expensive else 0.0
-
-        battery = from_own + from_market - discharge
-        return dict(cheap=cheap, expensive=expensive, passive=passive,
-                    from_own=from_own, from_market=from_market,
-                    discharge=discharge, battery=battery,
-                    planned_net=passive + battery)
+        return dict(cheap=cheap, expensive=expensive, need=passive,
+                    surplus=surplus, headroom=headroom, available=available)
 
     # ----------------------------------------------------------------- bid
     def bid(self, obs: Dict[str, BuildingObs], mkt: MarketInfo) -> np.ndarray:
         """Return one signed quantity per price level.
 
         Positive means BUY at that price, negative means SELL at that price.
-        Legal price levels are `mkt.price_grid`: $0.00 up to the current
-        grid price, in one cent steps.
+        Legal price levels are `mkt.price_grid`: $0.00 up to the current grid
+        price, in one cent steps.
+
+        The shape of this bid follows directly from what `dispatch()` will do.
+        Since the battery covers anything the market does not, our demand
+        splits into two parts with very different reservation prices.
         """
         plan = self._plan(obs, mkt)
         self._plan_cache = plan
         bid = mkt.new_bid()
-
-        # What we need after our own battery has been accounted for. This is
-        # the part we cannot avoid, so we are willing to pay nearly the grid
-        # price for it -- but never more, because the grid is our fallback.
-        need = plan["passive"] + plan["from_own"] - plan["discharge"]
+        grid = mkt.grid_import_price
+        need, available = plan["need"], plan["available"]
 
         if need > 0:
-            bid.buy(price=mkt.grid_import_price - 0.01, quantity=need)
-        elif need < 0:
-            # Surplus we could not store ourselves. Careful here: energy is
-            # perishable. If this does not sell it is curtailed and earns
-            # exactly nothing, so the reserve price has to be low enough to
-            # actually clear. We use the only feedback the market gives us
-            # -- last timestep's clearing price -- and undercut it by a
-            # cent. Holding out for a good price and getting nothing is the
-            # classic way to lose money in this exercise.
-            last = mkt.last_clearing_price
-            reserve = max(0.01, (last - 0.01) if last else 0.02)
-            bid.sell(price=reserve, quantity=-need)
+            # The part storage CANNOT cover. If we do not buy this it comes
+            # off the meter at the full retail price, so we will pay almost
+            # anything short of that.
+            must_have = max(0.0, need - available)
+            if must_have > 0:
+                bid.buy(grid - 0.01, must_have)
 
-        # Opportunistic battery charging, bid low because we do not have to
-        # do it. Note this quantity is exactly what dispatch will charge.
-        if plan["from_market"] > 0:
-            bid.buy(price=min(0.06, 0.4 * mkt.grid_import_price),
-                    quantity=plan["from_market"])
+            # The part storage CAN cover. We do not need this at all -- the
+            # battery will do it for free. Buying is only worthwhile if it is
+            # cheap enough to be worth sparing the charge for later, so bid
+            # low and let it go if nobody sells at that price.
+            optional = need - must_have
+            if optional > 0:
+                bid.buy(min(0.5 * grid, grid - 0.02), optional)
+        else:
+            # Surplus. Whatever our own battery can take is free and never
+            # touches the market; the rest is perishable, because with no
+            # grid export it is curtailed if it does not sell this hour. So
+            # price it low enough to clear -- undercut the last clearing
+            # price, which is the only feedback the market gives us.
+            storable = min(plan["surplus"], plan["headroom"])
+            perishable = plan["surplus"] - storable
+            if perishable > 0:
+                last = mkt.last_clearing_price
+                bid.sell(max(0.01, (last - 0.01) if last else 0.02), perishable)
+
+        # Top the battery up when energy is genuinely cheap, but leave room
+        # for our own solar later -- that solar is free and would otherwise be
+        # curtailed, so filling the battery overnight can cost more than it saves.
+        if plan["cheap"]:
+            soc = sum(o.battery_soc_kwh for o in obs.values() if o.has_battery)
+            cap = sum(o.battery_capacity_kwh for o in obs.values() if o.has_battery)
+            if cap > 0 and soc < 0.4 * cap:
+                room = min(plan["headroom"], 0.4 * cap - soc)
+                if room > 0:
+                    bid.buy(min(0.4 * grid, grid - 0.02), room)
 
         return bid.array
 
@@ -194,16 +185,49 @@ class ExampleAgent(Agent):
         """
         plan = self._plan_cache or self._plan(obs, mkt)
 
-        # Scale the battery command to the energy we actually planned for.
+        # --- THE BATTERY GOES BEFORE THE GRID, ALWAYS ----------------------
+        # Work out what the buildings are actually about to consume, subtract
+        # whatever the market gave us, and cover the remainder from storage
+        # before touching the meter. Settlement makes the reason plain:
         #
-        # `battery` is in kWh, but the Action takes a fraction of rated
-        # power. Sending 1.0 when the plan only called for 2 kWh out of a
-        # 5 kW battery would pull an extra 3 kWh off the grid that we never
-        # bid for -- at full retail price, because we did not buy it in the
-        # market. Divide by the rated power instead.
+        #     residual = physical net - cleared position
+        #     residual > 0  ->  bought from the grid at the FULL retail price
+        #     residual < 0  ->  curtailed, and earns nothing
+        #
+        # So while the battery holds charge there is never a reason to import:
+        # a kWh out of storage is already paid for, and a kWh off the grid is
+        # the most expensive kWh available. The reverse holds too -- if the
+        # market handed us more than we need, store it rather than throw it
+        # away. Aim the battery at making the residual zero and both cases
+        # fall out of one line.
+        #
+        # Note this ignores the market position deliberately: whether we
+        # bought or sold this hour does not change the fact that stored energy
+        # beats grid energy right now.
+        #
+        # It is a simple rule, not an optimal one, and the gap is worth
+        # understanding. Draining the battery to avoid a $0.09 import in a
+        # cheap hour spends a kWh that would have offset $0.39 at the evening
+        # peak. A better agent holds some charge back for the dear hours. That
+        # is your move, not this file's.
+        need = plan["need"]                          # already includes the heat pump
+        residual = need - result.quantity
+
         total_power = sum(o.battery_max_power_kw for o in obs.values()
                           if o.has_battery)
-        battery_cmd = (float(np.clip(plan["battery"] / total_power, -1.0, 1.0))
+        soc = sum(o.battery_soc_kwh for o in obs.values() if o.has_battery)
+        capacity = sum(o.battery_capacity_kwh for o in obs.values()
+                       if o.has_battery)
+
+        if residual > 0:
+            move = -min(residual, total_power, soc)              # discharge
+        else:
+            move = min(-residual, total_power, max(0.0, capacity - soc))  # charge
+
+        # `Action.battery` is a fraction of rated POWER, not an energy. Sending
+        # 1.0 when the plan called for 2 kWh out of a 5 kW battery would pull
+        # the extra 3 kWh off the grid at full retail.
+        battery_cmd = (float(np.clip(move / total_power, -1.0, 1.0))
                        if total_power > 0 else 0.0)
 
         # --- PRE-COOLING: THE HOOK IS HERE, THE STRATEGY IS NOT ------------
@@ -227,12 +251,10 @@ class ExampleAgent(Agent):
         # expensive window, the thermal mass, and how much slack the comfort
         # band leaves.
         #
-        # Those are all measurable, and some are things you can change:
-        #
-        #     python examples/precool_study.py
-        #
-        # sweeps pre-cooling depth against the price spread and prints the
-        # bills. Find the regime where it works, then decide.
+        # All of those are measurable. Sweep `aim` over a few values, compare
+        # the bills, and find out. One thing to watch on this stock: the
+        # comfort band moves by up to 7 K within a single building, so cold
+        # banked against a band that then steps down under you is wasted.
 
         actions: Dict[str, Action] = {}
         for name, o in obs.items():

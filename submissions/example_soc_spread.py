@@ -148,15 +148,24 @@ class SocSpreadAgent(Agent):
         need = sum(o.passive_net_kwh + abs(hvac[n]) * o.hp_max_electric_kw
                    for n, o in obs.items())
 
+        # THE BATTERY GOES BEFORE THE GRID, ALWAYS.
+        #
         # Settlement is residual = physical_net - q, where a positive residual
-        # is bought from the grid and a negative one is curtailed. Both cost
-        # money, so aim the battery at making the residual zero:
+        # is bought from the grid at the full retail price and a negative one
+        # is curtailed for nothing. Both cost money, so aim the battery at
+        # making the residual zero:
         #
         #     physical_net = need + charge - discharge  ==  q
         #
-        # A positive target means store the surplus, negative means drain.
-        # This single line is what "drain the battery before buying from the
-        # grid" actually means, and it delivers whatever was sold as well.
+        # A positive target means store what the market handed us; negative
+        # means drain storage to cover what it did not. That is the whole of
+        # "battery before grid", and it delivers whatever was sold as well.
+        #
+        # It deliberately ignores whether we bought or sold this hour: stored
+        # energy is already paid for, so while there is charge in the battery
+        # importing is never the cheaper option right now. "Right now" is the
+        # caveat -- a kWh spent avoiding a cheap import is a kWh unavailable
+        # at the evening peak, and holding some back is the obvious upgrade.
         target = q - need
 
         power = sum(o.battery_max_power_kw for o in obs.values() if o.has_battery)

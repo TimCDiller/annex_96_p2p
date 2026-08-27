@@ -11,8 +11,9 @@ Point it at your clone with the config, or with
     set ANNEX96_CE1=../annex96_common_exercise_1     (Windows)
     export ANNEX96_CE1=../annex96_common_exercise_1  (POSIX)
 
-Expect it to take a couple of minutes: building the environment is ~30 s and
-each timestep ~0.15 s.
+Expect a few minutes: building the environment is ~30 s, each timestep ~0.15 s,
+and the performance tests each run the simulation twice (once for the agent,
+once for the all-default reference it is scored against).
 """
 import os
 import sys
@@ -71,12 +72,21 @@ pytestmark = pytest.mark.skipif(
            "set ANNEX96_CE1 and install torch to enable")
 
 
+#: Seven days, not two or three. Two separate warmups have to clear before a
+#: score means anything: the LSTM dynamics have `lookback = 13`, so the
+#: temperature is pinned for the first 13 timesteps whatever the agent does,
+#: and an agent that classifies hours by price percentile needs a day or so of
+#: history before it classifies anything. At three days example_team scores
+#: above 1.0 purely because most of the run is warmup.
+DAYS = 7
+
+
 @pytest.fixture(scope="module")
 def backend():
     if CE1_ROOT is not None:
         sys.path.insert(0, str(CE1_ROOT))
     from annex96p2p.backends.citylearn_backend import CityLearnBackend
-    return CityLearnBackend(schema=str(SCHEMA), days=3, root=str(CE1_ROOT))
+    return CityLearnBackend(schema=str(SCHEMA), days=DAYS, root=str(CE1_ROOT))
 
 
 @pytest.fixture(scope="module")
@@ -89,7 +99,7 @@ def tariff(backend):
 # --------------------------------------------------------------------------
 def test_neighbourhood_shape(backend):
     assert len(backend.building_names) == 25
-    assert backend.n_timesteps == 72          # days=3
+    assert backend.n_timesteps == DAYS * 24
 
 
 def test_observations_are_populated(backend):

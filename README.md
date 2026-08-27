@@ -516,20 +516,34 @@ it — its weaknesses are the assignment.
 Two worked examples ship, in deliberately different styles. Read both — they
 fail in different ways.
 
-| file | style | score | what it demonstrates |
-|---|---|---:|---|
-| `example_team.py` | a rule stack — if-statements about the price | ~0.93 | price-aware battery, bid/dispatch consistency |
-| `example_soc_spread.py` | a market maker — quotes around a reservation price | ~0.88 | pricing storable vs perishable energy separately |
+One week on the real stock, the same five buildings, everyone else on the
+default agent:
 
-Both beat the default agent, but not by much, and that is the point: the
+| strategy | bill | energy | comfort | vs default |
+|---|---:|---:|---:|---:|
+| default agent | $155.41 | $116.79 | $38.62 | — |
+| `example_team.py` | $141.48 | $102.87 | $38.62 | **−9.0%** |
+| `example_soc_spread.py` | $129.28 | $90.66 | $38.62 | **−16.8%** |
+
+Comfort is identical in all three, because all three use the shipped
+`Thermostat`. The whole difference is in the market — which is the point: the
 default is thermally competent, so the score measures market skill rather than
 who can hold a thermostat.
+
+Both templates put **the battery before the grid**: whatever the market does
+not supply comes out of storage while there is charge in it, because a kWh
+already in the battery is paid for and a kWh off the meter is the most
+expensive one available. Neither holds charge back for the evening peak, and
+that is the obvious next move.
 
 `example_team.py` is worth reading for one bug in its own history. It used to
 bid its *passive* position and leave the heat pump out — the exact mistake its
 docstring warns about — and on these buildings, where the compressor draws
-3.5 kW, that alone took it from 0.93 to **1.15**, worse than doing nothing
-clever. A test now pins it.
+3.5 kW, that alone put it **above 1.0**, worse than doing nothing clever. A
+test in `tests/test_citylearn.py` now pins it, and asserts zero agent failures
+as well as a score: a submission that raises every timestep is silently
+replaced by the default agent, so a plausible-looking leaderboard is not
+evidence that it ran.
 
 `example_soc_spread.py` is worth studying even if you write nothing like it.
 It sets its mid-price at `(1 - state_of_charge) x grid_price` and quotes a
@@ -544,54 +558,25 @@ shading, and reasoning about when the market will be glutted.
 
 ### Pre-cooling, and finding out for yourself
 
-The building fabric is a thermal store nobody bills you for, and on most of
-these buildings it holds more energy than the battery does. Over-cool while
-energy is cheap, then coast through the expensive hours with the compressor
-off. `Thermostat` takes an `aim` per call, so trying it costs one line:
+The building fabric is a thermal store nobody bills you for, and on these
+homes it holds more energy than the battery does. Over-cool while energy is
+cheap, then coast through the expensive hours with the compressor off.
+`Thermostat` takes an `aim` per call, so trying it costs one line:
 
 ```python
 hvac = self.thermostat(o, aim=-0.6 if cheap else 0.4)   # -1 bottom, +1 top
 ```
 
 Whether it pays is a question about numbers, not principle. Against you: a
-colder building leaks faster, so the round trip is lossy, and the default
-thermostat already sits near the cheap edge of the band. For you: the
-peak/off-peak ratio, the width of the expensive window, the thermal mass, and
-how much slack the comfort band leaves.
+colder building leaks faster, the shipped thermostat already sits near the
+cheap edge of the band, and every degree-hour outside it is charged. For you:
+the peak/off-peak ratio, the width of the expensive window, the thermal mass.
 
-```bash
-python examples/precool_study.py --days 5
-```
-
-sweeps pre-cooling depth against the price spread on a portfolio with no PV
-and no battery, so the fabric is the only flexibility in play:
-
-```
-delivery adder        $0.075   $0.040   $0.020   $0.000
-peak/off-peak ratio     4.1x     5.9x     8.5x    16.3x
-no pre-cool             0.891    0.890    0.889    0.888
-aim -0.9            0.876 +2%  0.854 +4%  0.835 +6%  0.810 +9%
-```
-
-The `--mass`, `--band` and `--comfort` flags move the boundary further. Note
-which axis matters most: the delivery adder is the flat part of the retail
-price, and it compresses the ratio the whole arbitrage lives on — wholesale
-swings 16× here, retail only 4× once $0.075 is added to every hour. Real
-tariffs do exactly that, which is a large part of why demand response is
-harder in practice than on paper.
-
-Three things worth understanding early, all of which the example gets wrong
-in its git history:
-
-1. **Net across your own buildings before you bid.** Charging a battery from
-   your own roof is a transfer between two buildings you already own. It
-   should never touch the market.
-2. **Self-consume stored energy before selling it.** A kWh out of your battery
-   that you use yourself saves the full grid price. The same kWh sold into the
-   market earns only the clearing price, which is capped below it.
-3. **Scale your actions to what you bid for.** `Action.battery` is a fraction
-   of rated power, not an amount of energy. Sending `1.0` when you only bid
-   for 2 kWh pulls the rest off the grid at full retail.
+One hazard specific to this stock: the comfort band is the occupant setpoint
+plus or minus `comfort_band`, and the ResStock schedules move it by **up to
+7 K within a single building**. Cold banked against a band that then steps
+down underneath you is wasted, and no controller can follow a 6 K step in an
+hour. Sweep `aim` over a few values and measure it.
 
 ---
 
@@ -633,7 +618,7 @@ src/annex96p2p/
     citylearn_backend.py   the Annex 96 neighbourhood
 submissions/      drop your file here; two example_*.py templates
 config/           default.yaml -- the only one
-examples/         explain_market.py, precool_study.py
+examples/         explain_market.py
 tests/stub.py     a physics-free backend, for contract tests only
 scripts/          scan_submissions.py -- the safety scan
 docs/             assignment.md, security.md, citylearn.md

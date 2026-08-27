@@ -306,11 +306,10 @@ class Thermostat:
     thermal-mass portfolio, the best coasting aim was +0.4 at $3.00/degC-h and
     +0.6 at $0.50/degC-h.
 
-        python examples/precool_study.py
-
-    sweeps pre-cooling depth against the price spread and prints the resulting
-    bills, so you can find the regime where it works rather than take anyone's
-    word for it. Do that before you spend a lot of effort on either conclusion.
+    Measure it before you commit to it: sweep `aim` over a few values and
+    compare the bills. On this stock the comfort band moves by up to 7 K
+    within a single building, so cold banked against a band that then steps
+    down underneath you is a real risk.
     """
 
     def __init__(self, aim: float = 0.2, gain: float = 0.8,
