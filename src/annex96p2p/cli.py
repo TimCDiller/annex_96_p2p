@@ -1,6 +1,6 @@
 """Command line entry point.
 
-    python -m annex96p2p run          --config config/smoke.yaml
+    python -m annex96p2p run          --config config/default.yaml
     python -m annex96p2p tournament   --config config/default.yaml
     python -m annex96p2p buildings
     python -m annex96p2p check        submissions/my_team.py
@@ -20,17 +20,10 @@ from .tariff import Tariff
 
 
 def make_backend(cfg: Config):
-    if cfg.backend == "mock":
-        from .backends.mock import MockBackend, default_neighbourhood
-        return MockBackend(n_days=cfg.days,
-                           specs=default_neighbourhood(cfg.n_per_archetype,
-                                                       cfg.n_buildings))
-    if cfg.backend == "citylearn":
-        from .backends.citylearn_backend import CityLearnBackend
-        return CityLearnBackend(dataset=cfg.citylearn_dataset,
-                                schema=cfg.citylearn_schema, days=cfg.days,
-                                root=cfg.citylearn_root)
-    raise SystemExit("unknown backend %r (expected 'mock' or 'citylearn')" % cfg.backend)
+    from .backends.citylearn_backend import CityLearnBackend
+    return CityLearnBackend(dataset=cfg.citylearn_dataset,
+                            schema=cfg.citylearn_schema, days=cfg.days,
+                            root=cfg.citylearn_root)
 
 
 def make_tariff(cfg: Config, n_timesteps: int) -> Tariff:
@@ -49,7 +42,7 @@ def do_run(cfg: Config, show_defaults: bool, quiet: bool = False,
     try:
         participants, discovery = build_participants(
             backend, cfg.submissions, default_agent=cfg.default_agent,
-            unclaimed_mode=cfg.unclaimed_mode, conflict_policy=cfg.conflict_policy,
+            conflict_policy=cfg.conflict_policy,
             assignments=cfg.assignments, strict_assignments=cfg.strict_assignments)
     except SubmissionError as exc:
         # A setup problem, not a crash. Say what is wrong and stop cleanly.
@@ -67,7 +60,6 @@ def do_run(cfg: Config, show_defaults: bool, quiet: bool = False,
             print()
 
     result = simulate(backend, participants, tariff, max_bid_kwh=cfg.max_bid_kwh,
-                      slow_call_seconds=cfg.slow_call_seconds,
                       call_timeout_seconds=cfg.call_timeout_seconds,
                       run_budget_seconds=cfg.run_budget_seconds)
 
@@ -148,9 +140,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         p.add_argument("--days", type=int, default=None, help="override simulated days")
         p.add_argument("--submissions", default=None, help="override submissions folder")
         p.add_argument("--out", default=None, help="override output folder")
-        p.add_argument("--n-buildings", type=int, default=None, dest="n_buildings",
-                       help="exact number of buildings (mock backend); "
-                            "25 matches the real Annex 96 neighbourhood")
 
     run_p = sub.add_parser("run", help="run a simulation")
     add_common(run_p)
@@ -175,7 +164,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     cfg = Config.load(getattr(args, "config", None))
-    for field_name in ("days", "submissions", "out", "n_buildings"):
+    for field_name in ("days", "submissions", "out"):
         value = getattr(args, field_name, None)
         if value is not None:
             setattr(cfg, field_name, value)

@@ -80,10 +80,6 @@ class BuildingObs:
     def comfort_mid(self) -> float:
         return 0.5 * (self.comfort_low + self.comfort_high)
 
-    @property
-    def is_uncomfortable(self) -> bool:
-        return not (self.comfort_low <= self.indoor_temperature <= self.comfort_high)
-
 
 # --------------------------------------------------------------------------
 # What you control

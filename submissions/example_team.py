@@ -5,7 +5,7 @@
 Then check it loads, and run it:
 
     python -m annex96p2p check submissions/team_yourname.py
-    python -m annex96p2p run --config config/smoke.yaml
+    python -m annex96p2p run --config config/default.yaml
 
 Every building you do not claim is run by the built-in default agent, so you
 always have a market full of opponents to trade against, even on your own
@@ -37,15 +37,22 @@ from annex96p2p import (Action, Agent, BuildingObs, MarketInfo, Thermostat,
                         TradeResult)
 
 # --------------------------------------------------------------------------
-# Which buildings you control. Run `python -m annex96p2p buildings` to see
-# what is available and what each one is made of.
+# Which buildings you control. Run `python -m annex96p2p buildings` for the
+# full list and what each one is made of.
 #
-# B01 is solar-rich, B02 is storage-rich, B03 is heavy thermal mass. That is
-# a deliberately complementary set: B01 generates a midday surplus that B02
-# can store, and B03 can shift its cooling load. Look at what you have been
-# assigned before you write any strategy.
+# These are ResStock ids, not friendly names. The neighbourhood is fairly
+# uniform -- every home has a PV array sized to most of its own demand AND a
+# battery holding a few hours of its own peak -- so there is no complementary
+# set to hunt for. What differs between them is scale, and how volatile the
+# occupant setpoint schedule is.
 # --------------------------------------------------------------------------
-BUILDINGS = ["B01", "B02", "B03"]
+BUILDINGS = [
+    "resstock-amy2018-2021-release-1-6887",
+    "resstock-amy2018-2021-release-1-123182",
+    "resstock-amy2018-2021-release-1-155572",
+    "resstock-amy2018-2021-release-1-20687",
+    "resstock-amy2018-2021-release-1-21356",
+]
 
 NAME = "example_team"
 
@@ -83,8 +90,21 @@ class ExampleAgent(Agent):
         else:
             cheap = expensive = False
 
-        # Net position if we left every heat pump and battery alone.
-        passive = sum(o.passive_net_kwh for o in obs.values())
+        # What we will physically consume: the passive load, PLUS the heat
+        # pump we are about to run.
+        #
+        # Leaving that second term out is the mistake this whole file is about,
+        # and it is easy to make because `passive_net_kwh` looks like the
+        # answer. It is not: these compressors draw around 3.5 kW, so bidding
+        # without them means buying a fraction of what you use and taking the
+        # rest from the grid at full retail. An earlier version of this file
+        # did exactly that and scored WORSE than the default agent.
+        #
+        # `Thermostat` is idempotent per timestep, so asking it here and again
+        # in dispatch() returns the same command both times.
+        passive = sum(o.passive_net_kwh
+                      + abs(self.thermostat(o)) * o.hp_max_electric_kw
+                      for o in obs.values())
         surplus = max(0.0, -passive)
 
         # How much the batteries could take in, and give out, this hour.

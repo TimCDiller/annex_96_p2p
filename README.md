@@ -31,25 +31,12 @@ git clone <this repo>
 cd annex96-p2p
 pip install -e ".[dev]"
 
-python -m pytest                                  # confirm your setup works
-python examples/explain_market.py                 # how the market works, in numbers
-python -m annex96p2p run --config config/smoke.yaml
+python -m pytest                    # contract checks, no dataset needed
+python examples/explain_market.py   # the market in real numbers, no dataset needed
 ```
 
-That needs numpy, pandas and pyyaml and nothing else, and runs a simulated
-week in about a tenth of a second on a synthetic 12-building neighbourhood.
-
-**There are two building stocks, and the same agent code runs on both:**
-
-| config | stock | needs | speed |
-|---|---|---|---|
-| `smoke.yaml` | 12 synthetic buildings, 2 days | numpy | instant |
-| `mock.yaml` | 12 synthetic buildings, a week | numpy | ~0.1 s |
-| `ce1_scale.yaml` | 25 synthetic buildings, a week | numpy | ~0.3 s |
-| **`default.yaml`** | **the real 25 Annex 96 homes, 30 days** | CityLearn + PyTorch | ~2 min |
-
-Develop against the synthetic stock because the loop is fast, then confirm on
-`default.yaml`. The real stock needs a clone of the exercise repo:
+Running an actual simulation needs the exercise dataset and PyTorch, because
+the buildings carry LSTM thermal models:
 
 ```bash
 git clone https://github.com/kkaspar10/annex96_common_exercise_1 ../annex96_common_exercise_1
@@ -57,10 +44,13 @@ pip install torch
 python -m annex96p2p run --config config/default.yaml
 ```
 
-The differences between the two stocks are real and documented in
-[docs/citylearn.md](docs/citylearn.md) -- the real homes all have both PV and a
-large heat pump, comfort is much harder to hold, and the comfort price is
-calibrated differently as a result. Mechanisms transfer; numbers do not.
+There is **one** building stock: the real Annex 96 Common Exercise 1
+neighbourhood — 25 ResStock homes in Texas, 720 hourly timesteps from June.
+Building the environment takes about 30 s and each timestep about 0.15 s, so a
+full run is a couple of minutes. Set `days:` in the config while you iterate.
+
+Setup details and the things about this dataset that will surprise you are in
+[docs/citylearn.md](docs/citylearn.md).
 
 Then:
 
@@ -193,31 +183,15 @@ re-entered for every remaining timestep.
 
 ### Shipping a trained model
 
-Put the weights file next to your submission and load it in `reset()`:
+Train offline, save the weights next to your submission, and load them in
+`reset()` rather than at import time. `.npz` (`numpy.savez`) and
+`.safetensors` are both pure data and can be read by whoever reviews your
+work; a pickled `.pt` cannot, which matters when you have to account for what
+your agent learned.
 
-```python
-from annex96p2p import Agent, load_weights
-
-class MyAgent(Agent):
-    def reset(self):                       # not at import time
-        w = load_weights("team_yourname.npz")
-        self.W1, self.b1 = w["W1"], w["b1"]
-```
-
-`load_weights` accepts `.npz` and `.safetensors` and resolves the name inside
-`submissions/`, so your agent works whichever directory the run started from.
-Nothing stops you opening a file yourself — this just gets the path right and
-keeps the checkpoint readable. Converting what you trained is two lines:
-
-```python
-import numpy as np, torch
-sd = torch.load("model.pt", map_location="cpu")        # on YOUR machine
-np.savez("submissions/team_yourname.npz",
-         **{k: v.numpy() for k, v in sd.items()})
-```
-
-Then hand in both files. Train offline, keep inference deterministic — seed
-everything, `eval()`, `no_grad()` — so your result reproduces.
+Keep inference deterministic — seed everything, `eval()`, `no_grad()` — so
+your result reproduces, and keep the model small enough to stay inside
+`call_timeout_seconds`.
 
 ---
 
@@ -488,9 +462,6 @@ made of.
 **No `results/` folder.** Either `save_csv: false` in your config, or you are
 looking in the wrong place — the path comes from `out:` in the config file.
 
-**Everything is very slow.** You are on the CityLearn backend. Set
-`backend: mock` for development; the mock runs a full week in about a tenth of
-a second.
 
 ---
 
@@ -547,13 +518,18 @@ fail in different ways.
 
 | file | style | score | what it demonstrates |
 |---|---|---:|---|
-| `example_team.py` | a rule stack — if-statements about the price | ~0.97 | price-aware battery, bid/dispatch consistency |
-| `example_soc_spread.py` | a market maker — quotes around a reservation price | ~0.79 | pricing storable vs perishable energy separately |
+| `example_team.py` | a rule stack — if-statements about the price | ~0.93 | price-aware battery, bid/dispatch consistency |
+| `example_soc_spread.py` | a market maker — quotes around a reservation price | ~0.88 | pricing storable vs perishable energy separately |
 
-`example_team.py` sits close to 1.0 on purpose. The default agent is
-thermally competent — it has to be, or the score would just measure who can
-hold a thermostat — so beating it takes real work on the market side. That is
-the assignment.
+Both beat the default agent, but not by much, and that is the point: the
+default is thermally competent, so the score measures market skill rather than
+who can hold a thermostat.
+
+`example_team.py` is worth reading for one bug in its own history. It used to
+bid its *passive* position and leave the heat pump out — the exact mistake its
+docstring warns about — and on these buildings, where the compressor draws
+3.5 kW, that alone took it from 0.93 to **1.15**, worse than doing nothing
+clever. A test now pins it.
 
 `example_soc_spread.py` is worth studying even if you write nothing like it.
 It sets its mid-price at `(1 - state_of_charge) x grid_price` and quotes a
@@ -652,13 +628,13 @@ src/annex96p2p/
   registry.py     finding submissions, resolving claims, filling the rest
   reference.py    the all-default run that makes scores comparable
   baselines.py    the default agents
-  weights.py      load_weights() -- the sanctioned way to read trained weights
   backends/
-    mock.py       self-contained building simulator (the default)
-    citylearn_backend.py   the real Annex 96 neighbourhood (opt-in)
+    base.py       the interface
+    citylearn_backend.py   the Annex 96 neighbourhood
 submissions/      drop your file here; two example_*.py templates
-config/           default.yaml is the REAL stock; mock.yaml and smoke.yaml are synthetic
-examples/         explain_market.py, check_partition.py, precool_study.py
+config/           default.yaml -- the only one
+examples/         explain_market.py, precool_study.py
+tests/stub.py     a physics-free backend, for contract tests only
 scripts/          scan_submissions.py -- the safety scan
 docs/             assignment.md, security.md, citylearn.md
 tests/            91 tests; run them to verify your checkout
@@ -686,59 +662,21 @@ config, a submission claiming a building it was not assigned is rejected.
 To pin the partition, uncomment the `assignments` block in
 [`config/default.yaml`](config/default.yaml).
 
-### Specialise the portfolios — this is the setting that breaks the exercise
+### The stock is uniform — there is no clever partition
 
-The intuitive choice is the wrong one. Giving each team "one of each
-archetype" feels fair and complementary, and it is exactly what kills the
-market: a team that can balance itself internally will, and should, because
-moving energy between two buildings you already own is free and never touches
-the market.
+Every one of the 25 homes has a PV array sized to 70–100% of its own annual
+demand **and** a battery holding 1.5–3.5 hours of its own daily peak. There
+are no archetypes to separate, no structural sellers to pair with structural
+buyers, and no partition that unlocks more trade than another.
 
-Same twelve buildings, same default agent, same prices, one simulated week —
-the only thing that changes is where the ownership boundaries fall:
+That has a consequence worth knowing before you set the assignment: because
+everyone is long solar in the same hours and everyone has somewhere to put it,
+the market is thinner than the mechanism can support. The gains come from
+pricing your own inventory well, not from finding a counterparty who is short.
 
-| partition | traded | value created |
-|---|---:|---:|
-| each team one archetype | 328 kWh | $42.25 |
-| a dominant archetype each | 199 kWh | $25.39 |
-| one of each archetype per team | 23 kWh | $1.99 |
-| one participant per building (12 players) | 328 kWh | $42.25 |
-
-```bash
-python examples/check_partition.py     # reproduces the table, and tests your own
-```
-
-Two consequences. **Specialise:** give one team the PV and another the
-batteries, so they have to trade with each other. **More participants means a
-deeper market:** twelve students holding one building each trade about as much
-as four teams of three, because every ownership boundary is a boundary energy
-has to cross by trading. With a small cohort, prefer one building per student.
-
-Specialised teams do face genuinely different problems, which makes for a
-better discussion but means scores are not perfectly like-for-like. If you
-want them comparable, rotate the assignment between labs and average — do not
-flatten the portfolios to fix it.
-
-### Matching the real neighbourhood
-
-The real Annex 96 CE1 dataset has **25 homes** (both the Texas and Vermont
-schemas define exactly 25, all with PV and a battery). The mock backend
-defaults to 12, but takes any exact count:
-
-```bash
-python -m annex96p2p run --config config/ce1_scale.yaml   # 25 buildings, 5 teams
-python -m annex96p2p buildings --n-buildings 25
-```
-
-[`config/ce1_scale.yaml`](config/ce1_scale.yaml) ships a worked five-team
-partition at that size — 553 kWh traded over a week, clearing in 46% of hours.
-Designing a lab there means the building count and the `assignments:` block
-carry over to the CityLearn backend unchanged; only the building names need
-remapping, since CityLearn uses the ResStock ids.
-
-Student code is called inside a guard: exceptions, malformed bids, wrong-length
-vectors, NaNs and junk return values are all repaired or substituted, counted,
-and reported. One broken submission cannot take down a tournament run.
+Assign buildings however you like — by ResStock id, in blocks of five for
+five teams. Pin it with the `assignments` block in
+[`config/default.yaml`](config/default.yaml) and `tournament` will enforce it.
 
 ### Before you run collected submissions
 
@@ -770,12 +708,25 @@ the assignment brief.
 
 Everything is deterministic — same submission, same numbers, on any machine.
 
-### Using the real CityLearn neighbourhood
+### Two test suites
 
-The mock backend is a teaching model, not a research model. To run against the
-actual Annex 96 CE1 homes, see [docs/citylearn.md](docs/citylearn.md). Agent
-code is identical across both backends. That adapter is **not yet verified**
-against the upstream dataset and needs one checking pass.
+```bash
+python -m pytest                          # contracts, seconds, no dataset
+python -m pytest tests/test_citylearn.py  # the real stock, a couple of minutes
+```
+
+The fast suite runs against `tests/stub.py`, a physics-free backend that
+exists only to check contracts — that bids come back the right shape, the
+ledger balances, the firewall holds, a crashing agent is substituted, a
+timeout fires. It skips itself out of the way of anything to do with
+performance, because a number from that stub means nothing.
+
+`tests/test_citylearn.py` is where every claim about how a strategy performs
+lives. It also pins the adapter assumptions that were wrong in the first
+draft — that the action space is not `[-1, 1]`, that `efficiency` is not a
+COP, that the cooling action genuinely moves the temperature. It skips itself
+entirely when the dataset is not installed, so CI without the data is still
+green.
 
 ---
 

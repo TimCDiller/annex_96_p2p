@@ -1,31 +1,33 @@
-.PHONY: install smoke run test explain buildings clean scan docker-tournament
+.PHONY: install test explain buildings run tournament scan docker-tournament clean
 
 install:
 	python -m pip install -e ".[dev]"
 
-smoke:
-	python -m annex96p2p run --config config/smoke.yaml
+# Fast suite: contracts only, no CityLearn needed.
+test:
+	python -m pytest -q
 
-run:
-	python -m annex96p2p run --config config/default.yaml
-
+# The market mechanism walked through in real numbers. No dataset needed.
 explain:
 	python examples/explain_market.py
 
 buildings:
-	python -m annex96p2p buildings
+	python -m annex96p2p buildings --config config/default.yaml
 
-test:
-	python -m pytest -q
+run:
+	python -m annex96p2p run --config config/default.yaml
 
-clean:
-	rm -rf results .pytest_cache **/__pycache__
+tournament:
+	python -m annex96p2p tournament --config config/default.yaml
 
 scan:
 	python scripts/scan_submissions.py submissions/
 
 docker-tournament:
 	docker build -t annex96 .
-	docker run --rm --network none --memory 2g --cpus 2 \
+	docker run --rm --network none --memory 4g --cpus 2 \
 	  -v "$$PWD/submissions:/app/submissions:ro" annex96 \
 	  python -m annex96p2p tournament --config config/default.yaml
+
+clean:
+	rm -rf results .pytest_cache **/__pycache__

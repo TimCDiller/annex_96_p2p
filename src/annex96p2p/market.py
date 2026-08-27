@@ -164,25 +164,3 @@ def clear(bids: Dict[str, np.ndarray], price_grid: np.ndarray) -> Clearing:
     return Clearing(price=float(price_grid[j]), volume=cleared, quantities=quantities,
                     price_grid=price_grid, demand_curve=demand, supply_curve=supply,
                     level_index=j)
-
-
-def describe(clearing: Clearing, width: int = 46) -> str:
-    """A plain-text supply/demand picture, for teaching and for debugging."""
-    pg, D, S = clearing.price_grid, clearing.demand_curve, clearing.supply_curve
-    if len(pg) == 0:
-        return "(no price grid)"
-    scale = max(float(np.max(D)) if len(D) else 0.0,
-                float(np.max(S)) if len(S) else 0.0, 1e-9)
-    lines = ["  price   demand   supply", "  ------------------------" + "-" * width]
-    for j, p in enumerate(pg):
-        d, s = float(D[j]), float(S[j])
-        bar_d = "D" * int(round(width * d / scale))
-        bar_s = "s" * int(round(width * s / scale))
-        mark = "  <== clears here" if clearing.level_index == j else ""
-        lines.append("  $%.2f  %7.2f  %7.2f  |%s%s" %
-                     (p, d, s, (bar_d if d >= s else bar_s), mark))
-    if clearing.traded:
-        lines.append("  cleared %.3f kWh at $%.2f/kWh" % (clearing.volume, clearing.price))
-    else:
-        lines.append("  no trade this timestep")
-    return "\n".join(lines)

@@ -40,14 +40,7 @@ jobs:
         run: python scripts/scan_submissions.py submissions/
 
       # Only then execute them, under an external timeout.
-      - name: Smoke run
-        run: timeout 300 python -m annex96p2p run --config config/smoke.yaml
-
-      - name: Tournament
-        run: timeout 900 python -m annex96p2p tournament --config config/default.yaml
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: results
-          path: results/
+      # The dataset is not in CI, so a simulation cannot run here. The
+      # contract suite does not need it; test_citylearn.py skips itself.
+      - name: Contract tests
+        run: python -m pytest -q

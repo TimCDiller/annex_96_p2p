@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from annex96p2p import Action, Agent
-from annex96p2p.backends.mock import MockBackend, default_neighbourhood
+from stub import StubBackend
 from annex96p2p.baselines import SimpleRBCAgent
 from annex96p2p.registry import DiscoveryReport, Participant, fill_unclaimed
 from annex96p2p.runner import simulate
@@ -41,8 +41,8 @@ class Hog(Agent):
         return {n: Action() for n in obs}
 
 
-def build(agent_cls, days=1, buildings=("B01", "B02")):
-    backend = MockBackend(n_days=days, specs=default_neighbourhood(1))
+def build(agent_cls, days=1, buildings=("S01", "S02")):
+    backend = StubBackend(n_buildings=4, days=days)
     tariff = Tariff.synthetic(backend.n_timesteps)
     mine = [b for b in buildings if b in backend.building_names]
     parts = [Participant("victim", agent_cls("victim", mine), mine)]

@@ -1,22 +1,16 @@
-# THE DEFAULT: the real Annex 96 Common Exercise 1 neighbourhood.
+# The Annex 96 Common Exercise 1 neighbourhood: Texas, 25 homes,
 # Texas, 25 homes, 720 timesteps (30 days from June).
 #
-# This needs a clone of the exercise repo and PyTorch. If you have not got
-# those yet, use config/mock.yaml -- it needs nothing but numpy and runs a
-# week in a tenth of a second. Agent code is identical either way.
 #
 # Building the environment takes ~30 s and each timestep ~0.15 s, so a full
 # 720-step run is about two minutes -- doubled while `reference: true`.
-# Develop against config/mock.yaml, which does a week in a tenth of a second,
-# then confirm here.
-backend: citylearn
+# Set `days:` to 2 or 3 while iterating.
 citylearn_root: ../annex96_common_exercise_1
 citylearn_schema: ../annex96_common_exercise_1/data/datasets/annex96_ce1_tx_neighborhood/schema.json
 days:                      # blank = the dataset's full 720 timesteps
 
 submissions: submissions
 default_agent: rbc
-unclaimed_mode: individual
 conflict_policy: first
 
 # --- prices ----------------------------------------------------------------
@@ -62,7 +56,6 @@ call_timeout_seconds: 5.0
 run_budget_seconds: 120.0
 
 max_bid_kwh: 500.0
-slow_call_seconds: 1.0
 seed: 0
 
 reference: true

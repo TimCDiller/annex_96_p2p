@@ -130,10 +130,6 @@ def discover(folder, valid_buildings: Sequence[str],
 
     valid = set(valid_buildings)
 
-    # So load_weights() can find checkpoints sitting next to the submissions.
-    from .weights import register_search_dir
-    register_search_dir(folder)
-
     for path in sorted(folder.glob("*.py")):
         if path.stem.startswith("_"):
             continue
@@ -209,15 +205,12 @@ def resolve_conflicts(participants: List[Participant],
 
 
 def fill_unclaimed(participants: List[Participant], all_buildings: Sequence[str],
-                   report: DiscoveryReport, default_agent: str = "rbc",
-                   mode: str = "individual") -> List[Participant]:
+                   report: DiscoveryReport,
+                   default_agent: str = "rbc") -> List[Participant]:
     """Give every unclaimed building to the built-in default agent.
 
-    mode "individual"  each unclaimed building becomes its own participant.
-                       This is the default: it makes the market deep and
-                       means a single student still faces many counterparties.
-    mode "pooled"      all unclaimed buildings become one participant, which
-                       nets internally first and so trades much less.
+    One participant per unclaimed building, so a student developing alone
+    still faces a market full of counterparties.
     """
     claimed = {b for p in participants for b in p.buildings}
     unclaimed = [b for b in all_buildings if b not in claimed]
@@ -227,23 +220,16 @@ def fill_unclaimed(participants: List[Participant], all_buildings: Sequence[str]
 
     factory: Callable[..., Agent] = BUILTIN_AGENTS.get(default_agent, SimpleRBCAgent)
 
-    if mode == "pooled":
-        name = "default_pool"
+    for building in unclaimed:
+        name = "default_%s" % building
         participants.append(Participant(
-            name=name, agent=factory(name=name, buildings=list(unclaimed)),
-            buildings=list(unclaimed), is_default=True))
-    else:
-        for building in unclaimed:
-            name = "default_%s" % building
-            participants.append(Participant(
-                name=name, agent=factory(name=name, buildings=[building]),
-                buildings=[building], is_default=True))
+            name=name, agent=factory(name=name, buildings=[building]),
+            buildings=[building], is_default=True))
 
     return participants
 
 
 def build_participants(backend, submissions_folder, default_agent: str = "rbc",
-                       unclaimed_mode: str = "individual",
                        conflict_policy: str = "first",
                        assignments: Optional[Dict[str, List[str]]] = None,
                        strict_assignments: bool = False):
@@ -282,5 +268,5 @@ def build_participants(backend, submissions_folder, default_agent: str = "rbc",
 
     participants = resolve_conflicts(participants, report, policy=conflict_policy)
     participants = fill_unclaimed(participants, all_buildings, report,
-                                  default_agent=default_agent, mode=unclaimed_mode)
+                                  default_agent=default_agent)
     return participants, report

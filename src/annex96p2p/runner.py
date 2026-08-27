@@ -45,7 +45,6 @@ class RunResult:
     tariff: Tariff
     backend: Backend
     wall_seconds: float = 0.0
-    slow_calls: List[str] = field(default_factory=list)
     #: participant -> bill the default agent would have paid for the same
     #: buildings. Filled in by reference.attach(); see reference.py.
     reference_costs: Dict[str, float] = field(default_factory=dict)
@@ -96,14 +95,11 @@ class _Guard:
     isolation you need a process per agent; see docs/security.md.
     """
 
-    def __init__(self, ledger: Ledger, slow_call_seconds: float = 1.0,
-                 call_timeout_seconds: float = 0.0,
+    def __init__(self, ledger: Ledger, call_timeout_seconds: float = 0.0,
                  run_budget_seconds: float = 0.0):
         self.ledger = ledger
-        self.slow_call_seconds = slow_call_seconds
         self.call_timeout_seconds = float(call_timeout_seconds or 0.0)
         self.run_budget_seconds = float(run_budget_seconds or 0.0)
-        self.slow: List[str] = []
         self._fallback = SimpleRBCAgent(name="__fallback__", buildings=[])
         self._reported = set()
 
@@ -179,9 +175,6 @@ class _Guard:
         return box.get("value")
 
     def _after(self, participant, what, elapsed, timestep) -> None:
-        if elapsed > self.slow_call_seconds:
-            self.slow.append("%s.%s took %.2fs at timestep %s"
-                             % (participant.name, what, elapsed, timestep))
         self._charge(participant, elapsed, timestep)
 
     # -------------------------------------------------------------------- bid
@@ -248,7 +241,6 @@ class _Guard:
 
 def simulate(backend: Backend, participants: List[Participant], tariff: Tariff,
              max_bid_kwh: float = 500.0, progress: bool = False,
-             slow_call_seconds: float = 1.0,
              call_timeout_seconds: float = 0.0,
              run_budget_seconds: float = 0.0) -> RunResult:
     """Run the whole simulation and return the ledger."""
@@ -260,8 +252,7 @@ def simulate(backend: Backend, participants: List[Participant], tariff: Tariff,
             pass
 
     ledger = Ledger()
-    guard = _Guard(ledger, slow_call_seconds=slow_call_seconds,
-                   call_timeout_seconds=call_timeout_seconds,
+    guard = _Guard(ledger, call_timeout_seconds=call_timeout_seconds,
                    run_budget_seconds=run_budget_seconds)
     started = time.perf_counter()
 
@@ -331,5 +322,4 @@ def simulate(backend: Backend, participants: List[Participant], tariff: Tariff,
             print("  day %d/%d done" % ((t + 1) // 24, backend.n_timesteps // 24))
 
     return RunResult(ledger=ledger, participants=participants, tariff=tariff,
-                     backend=backend, wall_seconds=time.perf_counter() - started,
-                     slow_calls=guard.slow)
+                     backend=backend, wall_seconds=time.perf_counter() - started)

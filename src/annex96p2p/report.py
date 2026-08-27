@@ -133,7 +133,7 @@ def warnings_text(result: RunResult) -> str:
     warnings = result.ledger.warnings
     failures = [p for p in result.participants if p.failures or p.timeouts
                 or p.disqualified]
-    if not warnings and not failures and not result.slow_calls:
+    if not warnings and not failures:
         return ""
     lines = [RULE, "WARNINGS", RULE]
     for participant in failures:
@@ -149,8 +149,6 @@ def warnings_text(result: RunResult) -> str:
         lines.append("  " + message.replace("\n", "\n    "))
     if len(warnings) > 20:
         lines.append("  ... and %d more" % (len(warnings) - 20))
-    for message in result.slow_calls[:5]:
-        lines.append("  SLOW " + message)
     return "\n".join(lines)
 
 

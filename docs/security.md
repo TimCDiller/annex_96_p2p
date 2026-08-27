@@ -133,7 +133,6 @@ In your tournament config:
 max_bid_kwh: 500.0          # clips absurd bid quantities
 call_timeout_seconds: 2.0   # per call; overrun gets an empty bid
 run_budget_seconds: 60.0    # per participant per run; overrun disqualifies
-slow_call_seconds: 0.25     # softer: reports without substituting
 ```
 
 `call_timeout_seconds` and `run_budget_seconds` are real enforcement — see the

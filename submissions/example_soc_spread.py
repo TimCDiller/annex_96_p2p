@@ -53,28 +53,26 @@ Those numbers come from THIS repo's synthetic 12-building stock and synthetic
 price series. They will not carry over to the real Annex 96 neighbourhood, and
 the reason is worth understanding rather than ignoring:
 
-  * every one of the 25 real CE1 homes has BOTH a PV array sized to 70-100% of
-    its own demand AND a battery holding 1.5-3.5 hours of its own peak. The
-    lopsided all-battery-no-PV portfolio this strategy likes best does not
-    exist there at all.
-  * so on real data every participant is simultaneously a perishable seller
-    and an inventory market maker -- the `balanced` case, not the storage one.
-  * the cheap supply this agent lives on is surplus its neighbours would
-    otherwise curtail, and that is partly an artefact of how deliberately
-    lopsided the mock portfolios are. Where everyone owns storage sized to
-    their own roof, much less goes spare.
-
-The mechanism transfers. The margin does not. Expect to have to say which is
-which if you build on this.
+Every one of the 25 homes has BOTH a PV array sized to 70-100% of its own
+demand AND a battery holding 1.5-3.5 hours of its own peak. That uniformity
+matters for this strategy: there is no structural seller to buy cheaply from,
+because everyone is long solar at the same hours and everyone has somewhere to
+put it. The margin here comes from pricing your own inventory well, not from
+finding a counterparty who is short.
 """
 import numpy as np
 
 from annex96p2p import Action, Agent, Thermostat
 
-# The balanced archetype: some PV, some storage. Deliberately not the
-# storage-rich set, because a portfolio with both is where all three legs
-# matter -- and it is the case that resembles the real CE1 homes.
-BUILDINGS = ["B04", "B08", "B12"]
+# Five of the real homes. Each has both PV and storage, so all three bidding
+# legs below are exercised -- that is the normal case here, not a special one.
+BUILDINGS = [
+    "resstock-amy2018-2021-release-1-223548",
+    "resstock-amy2018-2021-release-1-237652",
+    "resstock-amy2018-2021-release-1-249373",
+    "resstock-amy2018-2021-release-1-276878",
+    "resstock-amy2018-2021-release-1-283562",
+]
 NAME = "example_soc_spread"
 
 

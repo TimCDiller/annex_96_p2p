@@ -1,15 +1,18 @@
-# Running against the real Annex 96 neighbourhood
+# The building stock
 
-The default backend is a small self-contained building simulator. It exists so
-the repo runs the instant it is cloned, with no heavy dependencies and no
-dataset download. It is a teaching model, not a research model.
+This is the only backend: the real Annex 96 Common Exercise 1 neighbourhood,
+25 ResStock homes in Texas, 720 hourly timesteps from June, with LSTM thermal
+dynamics per building.
 
-This document covers swapping in the actual Common Exercise 1 homes.
+Everything below was read off a live environment rather than assumed, and the
+four items under "What the real stock does differently" were all wrong in the
+adapter's first draft -- each of them produced plausible-looking numbers rather
+than an error, which is why they are pinned by tests in
+`tests/test_citylearn.py`.
 
-> **Status: verified against the upstream Texas dataset.** 25 buildings, 720
-> timesteps, run end to end with a five-building portfolio. The facts it
-> relies on, and the four that were wrong in the first draft, are recorded in
-> the adapter's own docstring.
+> **Verified against the upstream Texas dataset**, end to end with a
+> five-building portfolio. `python -m pytest tests/test_citylearn.py` re-checks
+> it, and skips itself if the dataset is not installed.
 
 ## What the real stock does differently
 
@@ -64,6 +67,19 @@ Splitting exceedance into the part that follows a setpoint step (unavoidable —
 the band moves by up to 7 K within a building) and the part where the band was
 stable, the smoothed controller cuts the *control-attributable* share 24-fold,
 from 694 to 29 degC-h.
+
+### The market is thin here, and that is structural
+
+Every one of the 25 homes has a PV array sized to 70-100% of its own annual
+demand AND a battery holding 1.5-3.5 hours of its own daily peak. Relative to
+the building it sits on, the equipment is near-uniform: PV varies only 1.64x
+per MWh consumed across the whole neighbourhood.
+
+So there is no structural seller to pair with a structural buyer. Everyone is
+long solar in the same hours and everyone has somewhere to put it. No
+partition of these buildings unlocks more trade than another, and the gains
+available come from pricing your own inventory well rather than from finding a
+counterparty who is short. Set expectations accordingly.
 
 **And a result worth building a lab around.** On the real stock the naive
 market *destroys* value -- aggregate gain is negative. The cause is measurable:

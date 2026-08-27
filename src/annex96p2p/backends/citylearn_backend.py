@@ -77,9 +77,8 @@ buildings carry LSTM dynamics models:
     pip install torch
 
 Building the environment takes about 30 s and each timestep about 0.15 s, so
-a 720-step run is roughly two minutes -- doubled if `reference: true`. Develop
-against `backend: mock`, which does a week in a tenth of a second, and confirm
-here.
+a 720-step run is roughly two minutes, doubled while `reference: true`. Set
+`days:` in the config to something small while you iterate.
 """.strip()
 
 
@@ -261,10 +260,7 @@ class CityLearnBackend(Backend):
             results[name] = StepOutcome(
                 net_kwh=net, degree_hours=exceed, indoor_temperature=temp,
                 battery_soc_kwh=soc,
-                hp_electric_kwh=float(_first(v, "cooling_electricity_consumption")),
-                battery_kwh=float(_first(v, "electrical_storage_electricity_consumption")),
                 base_load_kwh=float(_first(v, "non_shiftable_load")),
-                solar_kwh=abs(float(_first(v, "solar_generation"))),
             )
 
         self._t += 1

@@ -1,16 +1,10 @@
 """Backend interface: whatever simulates the physics.
 
-Two implementations ship with this repo:
+One implementation ships: `CityLearnBackend`, the real Annex 96 Common
+Exercise 1 neighbourhood. See docs/citylearn.md for the setup.
 
-  MockBackend       a small self-contained building simulator, pure numpy.
-                    No CityLearn, no PyTorch, no dataset download. This is
-                    what runs when you clone the repo and type `make smoke`.
-
-  CityLearnBackend  the real Annex 96 Common Exercise 1 neighbourhood, via
-                    the CityLearn environment. Opt-in, see docs/citylearn.md.
-
-Agent code is identical against both. Develop against the mock backend
-because it is fast, then confirm against CityLearn.
+The interface is kept separate from it so the market machinery can be tested
+without CityLearn -- `tests/stub.py` implements it for formal checks only.
 """
 from __future__ import annotations
 
@@ -29,10 +23,7 @@ class StepOutcome:
     degree_hours: float         # degC-hours outside the comfort band
     indoor_temperature: float
     battery_soc_kwh: float
-    hp_electric_kwh: float
-    battery_kwh: float          # + charged, - discharged
-    base_load_kwh: float
-    solar_kwh: float
+    base_load_kwh: float = 0.0
 
 
 class Backend(ABC):

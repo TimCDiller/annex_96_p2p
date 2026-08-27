@@ -8,9 +8,8 @@ suggested shape for the assignment, and the knobs that matter.
 Each lab reuses the same submission file, so students build one agent up
 rather than starting over.
 
-**Lab 0 — one building, no market.** Assign one building each, set
-`unclaimed_mode: pooled` and let them ignore `bid()` entirely (returning
-`mkt.empty_bid()` is legal). The task is dispatch only: minimise the bill for
+**Lab 0 — one building, no market.** Assign one building each and let them
+ignore `bid()` entirely (returning `mkt.empty_bid()` is legal). The task is dispatch only: minimise the bill for
 one building under a time-varying price. They discover pre-cooling and
 battery arbitrage here, before any market exists to distract them.
 
@@ -19,11 +18,12 @@ Start them on a single price level, as the default agent does, and let them
 find out that it fills at a terrible price. The lesson is the price grid, and
 that a bid is a reservation curve, not a quantity.
 
-**Lab 2 — portfolios and internal netting.** Give each student three or four
-buildings of one archetype. The new content is netting across your own
-buildings before bidding, and self-consumption versus selling. This is where
-`examples/check_partition.py` is worth showing them: the market they trade in
-is a consequence of how the buildings were divided up.
+**Lab 2 — portfolios and internal netting.** Give each student four or five
+buildings. The new content is netting across your own buildings before
+bidding, and self-consumption versus selling: a kWh out of your own battery
+that you use saves the full grid price, while the same kWh sold earns only the
+clearing price, which is capped below it.
+
 
 **Lab 3 — the tournament.** Everyone submits, you run
 `python -m annex96p2p tournament`, and the leaderboard goes on the projector.
@@ -68,11 +68,9 @@ final project.
 
 | setting | effect |
 |---|---|
-| `comfort_price` | at `0.0` the optimal strategy is to switch the heat pump off. Keep it at `3.0` or higher. |
+| `comfort_price` | at `0.0` the optimal strategy is to switch the heat pump off. Below about `0.18` ignoring comfort is rational and the term is decorative. `0.50` is the shipped value. |
 | `export_price` | at `0.0` (the Common Exercise 1 rule) unsold surplus is curtailed, which is what gives the market its reason to exist. Raising it weakens the market sharply. |
-| `days` | 7 is plenty. 2 (`smoke.yaml`) is enough to debug. |
-| `default_agent` | `nothing` makes unclaimed buildings passive, which makes the market thinner and the exercise easier. `rbc` is the sensible default. |
-| `unclaimed_mode` | `individual` gives every unclaimed building its own participant and a deep market; `pooled` gives one big netting participant and a thin one. |
+| `days` | blank runs the full 720 timesteps, about two minutes. Set 2-3 while iterating. |
 | `price_volatility` | raises the day-to-day spread. More volatility makes storage more valuable. |
 | `price_csv` | swap in real ISO day-ahead prices for the month you are modelling. |
 
@@ -101,28 +99,12 @@ skim the files.
 
 ## Scaling to a real cohort
 
-The mock neighbourhood has twelve buildings by default. Set `n_buildings` in
-the config for any exact count:
+There are 25 buildings. Five teams of five, or twelve students with two each
+and one spare. Pin it with the `assignments` block in `config/default.yaml`
+and run `tournament`, which turns an out-of-assignment claim into an error.
 
-```yaml
-n_buildings: 25      # matches the real Annex 96 neighbourhood
-```
-
-or from the command line:
-
-```bash
-python -m annex96p2p buildings --n-buildings 25
-```
-
-Archetypes keep cycling in the same order at any size, so `B01`, `B05`,
-`B09`, ... are always solar-rich. A count that is not a multiple of four
-comes out slightly uneven — 25 gives seven solar-rich and six of each of the
-others.
-
-**[`config/ce1_scale.yaml`](../config/ce1_scale.yaml) is ready to use**: 25
-buildings, five specialised teams of five, with the partition already worked
-out and measured. Over one week with the default agent it trades 553 kWh and
-clears in 46% of hours. Designing a lab at that size means the building count
-and the `assignments:` block carry over to the CityLearn backend unchanged
-— only the building names need remapping, since CityLearn uses the ResStock
-ids. See [citylearn.md](citylearn.md).
+The stock is uniform -- every home has both a PV array sized to most of its own
+demand and a battery holding a few hours of its own peak -- so no partition
+unlocks more trade than another. Divide it however is administratively
+convenient. See [citylearn.md](citylearn.md) for what that uniformity means
+for the market.

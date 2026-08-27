@@ -1,7 +1,7 @@
 """Run configuration, loaded from YAML."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -11,13 +11,8 @@ import yaml
 @dataclass
 class Config:
     # -- what to simulate ---------------------------------------------------
-    backend: str = "citylearn"             # "citylearn" or "mock"
-    days: int = 7
-    n_per_archetype: int = 3               # mock backend: 4 archetypes x this
-    # Exact building count, overriding n_per_archetype. Set this to 25 to
-    # match the real Annex 96 Common Exercise 1 neighbourhood, so a lab
-    # designed on the mock backend transfers to CityLearn unchanged.
-    n_buildings: Optional[int] = None
+    #: Timesteps to run, in days. Leave None for the dataset's full 720.
+    days: Optional[int] = None
     citylearn_dataset: str = "annex96_ce1_tx_neighborhood"
     citylearn_schema: Optional[str] = None
     # Path to a clone of the Annex 96 exercise repo. Put on sys.path, so the
@@ -27,7 +22,6 @@ class Config:
     # -- who plays ----------------------------------------------------------
     submissions: str = "submissions"
     default_agent: str = "rbc"             # rbc | pricetaker | nothing
-    unclaimed_mode: str = "individual"     # individual | pooled
     conflict_policy: str = "first"         # first | error
     assignments: Dict[str, List[str]] = field(default_factory=dict)
     strict_assignments: bool = False
@@ -68,9 +62,6 @@ class Config:
     # 0 disables the budget.
     run_budget_seconds: float = 120.0
 
-    # Softer than the timeout: calls slower than this are listed in the
-    # report without being substituted.
-    slow_call_seconds: float = 1.0
     seed: int = 0
 
     # -- output -------------------------------------------------------------
@@ -88,5 +79,3 @@ class Config:
             raise ValueError("unknown config keys in %s: %s" % (path, sorted(unknown)))
         return cls(**data)
 
-    def to_dict(self) -> dict:
-        return asdict(self)
