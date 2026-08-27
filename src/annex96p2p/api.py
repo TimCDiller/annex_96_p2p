@@ -301,6 +301,15 @@ class Thermostat:
     lossy, and you are competing against a baseline that already sits near the
     cheap edge of the band.
 
+    Note that `aim` may exceed +1, which puts the target ABOVE the top of the
+    comfort band. That is legal and sometimes correct: comfort here is PRICED,
+    not constrained, so in a dear enough hour the degree-hours can be cheaper
+    than the kWh needed to avoid them. Nothing in this class will override
+    that choice -- see the note in __call__. Whether it is right is your
+    problem, and the answer moves with `comfort_price`: measured on the
+    thermal-mass portfolio, the best coasting aim was +0.4 at $3.00/degC-h and
+    +0.6 at $0.50/degC-h.
+
         python examples/precool_study.py
 
     sweeps pre-cooling depth against the price spread and prints the resulting
@@ -344,11 +353,27 @@ class Thermostat:
         raw = min(1.0, max(0.0, error / (half * self.gain)))
 
         # Smoothing damps the overshoot a 15 kW heat pump would otherwise
-        # produce on an hourly step -- but only while we are still INSIDE the
-        # band. Once the temperature is over the edge we are paying a penalty
-        # every hour, so respond at once rather than easing in.
-        if o.indoor_temperature > o.comfort_high:
-            u = 1.0
+        # produce on an hourly step. Outside the band we drop the filter and
+        # act on this hour's error immediately, because the lag would cost a
+        # penalty every hour it persists.
+        #
+        # Note what this deliberately does NOT do: it does not force the
+        # compressor to full power to get back inside. Comfort is PRICED here,
+        # not constrained, and once it is priced the right response to being
+        # over the edge is an economic question, not a reflex. If the band is
+        # exceeded by 0.5 degC during the most expensive hour of the day, paying
+        # the degree-hours can easily beat buying the kWh to fix it -- and an
+        # agent that has deliberately aimed high to coast through the peak is
+        # doing exactly that on purpose. Slamming to full power would override
+        # its strategy at precisely the moment the strategy was meant to pay.
+        #
+        # So `aim` keeps its authority even outside the band. A high aim gives
+        # a small command and the building stays warm; a normal aim already
+        # gives a command near 1.0 by the time the edge is reached, so nothing
+        # is lost in the ordinary case.
+        if (o.indoor_temperature > o.comfort_high
+                or o.indoor_temperature < o.comfort_low):
+            u = raw
         else:
             u = self.smooth * self._u.get(o.name, 0.0) + (1.0 - self.smooth) * raw
 
