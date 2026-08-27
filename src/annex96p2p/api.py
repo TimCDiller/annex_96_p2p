@@ -280,9 +280,32 @@ class Thermostat:
                 return {n: Action(hvac=self.thermostat(o), battery=0.0)
                         for n, o in obs.items()}
 
-    Nothing here is price-aware, and that is the obvious thing to add: shift
-    `aim` down when energy is cheap to bank cold in the fabric, and up when it
-    is expensive to coast.
+    PRE-COOLING
+    -----------
+    Nothing here is price-aware, and that is the open question in this
+    exercise. `aim` is the one dial, and it can be passed per call so you need
+    not mutate anything:
+
+        cheap = mkt.grid_import_price < self.threshold
+        hvac = self.thermostat(o, aim=-0.6 if cheap else 0.4)
+
+    Negative aim sits below the centre of the band, banking cold in the fabric;
+    positive sits near the top edge, so the compressor stays off. The building
+    is a thermal store nobody charges you for, and it is usually a larger one
+    than the actual battery.
+
+    Whether it pays is genuinely not obvious, and it depends on things you can
+    measure: how wide the expensive window is, the ratio between peak and
+    off-peak price, how heavy the fabric is, and how much room the comfort band
+    leaves you. A colder building also leaks faster, so the round trip is
+    lossy, and you are competing against a baseline that already sits near the
+    cheap edge of the band.
+
+        python examples/precool_study.py
+
+    sweeps pre-cooling depth against the price spread and prints the resulting
+    bills, so you can find the regime where it works rather than take anyone's
+    word for it. Do that before you spend a lot of effort on either conclusion.
     """
 
     def __init__(self, aim: float = 0.2, gain: float = 0.8,
@@ -302,20 +325,21 @@ class Thermostat:
         self._u = {}
         self._cache = {}
 
-    def __call__(self, o) -> float:
+    def __call__(self, o, aim: float = None) -> float:
         # IDEMPOTENT PER TIMESTEP. Agents routinely need the heat pump command
         # twice in one hour -- once in bid(), to work out how much energy they
         # are about to consume, and again in dispatch() to actually issue it.
         # This object carries smoothing state, so advancing it twice per hour
         # silently doubles the filter rate and wrecks the control. Cache
         # instead, keyed on the building and timestep.
-        key = (o.name, o.timestep)
+        aim = self.aim if aim is None else aim
+        key = (o.name, o.timestep, round(aim, 4))
         if key in self._cache:
             return self._cache[key]
 
         mid = 0.5 * (o.comfort_low + o.comfort_high)
         half = max(0.25, 0.5 * (o.comfort_high - o.comfort_low))
-        target = mid + self.aim * half
+        target = mid + aim * half
         error = o.indoor_temperature - target
         raw = min(1.0, max(0.0, error / (half * self.gain)))
 

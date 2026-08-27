@@ -186,28 +186,33 @@ class ExampleAgent(Agent):
         battery_cmd = (float(np.clip(plan["battery"] / total_power, -1.0, 1.0))
                        if total_power > 0 else 0.0)
 
-        # --- ON PRE-COOLING, WHICH IS NOT HERE -----------------------------
-        # The obvious next move is to shift the thermostat with the price --
-        # `self.thermostat.aim = -0.5 if plan["cheap"] else 0.8 if
-        # plan["expensive"] else 0.2` -- banking cold in the fabric when
-        # energy is cheap and coasting when it is dear. One line.
+        # --- PRE-COOLING: THE HOOK IS HERE, THE STRATEGY IS NOT ------------
+        # The thermostat takes an `aim`: where inside the comfort band to sit,
+        # from -1 at the bottom edge through 0 at the centre to +1 at the top.
+        # Passing it per call costs one line:
         #
-        # It was measured, and on this parameterisation it LOSES: it took this
-        # agent from 1.00 to 1.15, and a standalone test of the thermal lever
-        # alone gave anywhere from +12% to +127% worse depending on the
-        # portfolio. Two reasons, both worth understanding before you try it:
+        #     hvac = self.thermostat(o, aim=-0.6 if plan["cheap"] else 0.4)
         #
-        #   * the default thermostat already sits near the top of the comfort
-        #     band, which for cooling is the cheap place to be. Pre-cooling is
-        #     measured against that, not against a badly tuned baseline, so
-        #     the margin is thinner than intuition suggests.
-        #   * the round trip is lossy. A colder building leaks harder, and the
-        #     expensive window here is only three or four hours wide, so you
-        #     hold the cold for a long time to avoid a short peak.
+        # Sitting low banks cold in the fabric while energy is cheap; sitting
+        # high lets the building coast through the expensive hours with the
+        # compressor off. The fabric is a thermal store nobody bills you for,
+        # and on most of these buildings it holds more than the battery does.
         #
-        # It is not a dead end -- it pays when the peak is wide, the price
-        # ratio is large, or the fabric is heavy. Work out which of those you
-        # have before spending effort on it.
+        # Whether it pays here is an open question and the answer is not
+        # obvious. Working against you: a colder building leaks faster, so the
+        # round trip is lossy; the baseline thermostat already sits near the
+        # cheap edge of the band, so you are not measuring against a bad
+        # controller; and every degree-hour outside the band is charged.
+        # Working for you: the peak/off-peak price ratio, the width of the
+        # expensive window, the thermal mass, and how much slack the comfort
+        # band leaves.
+        #
+        # Those are all measurable, and some are things you can change:
+        #
+        #     python examples/precool_study.py
+        #
+        # sweeps pre-cooling depth against the price spread and prints the
+        # bills. Find the regime where it works, then decide.
 
         actions: Dict[str, Action] = {}
         for name, o in obs.items():

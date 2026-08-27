@@ -563,6 +563,44 @@ with the rule meant for the third curtailed 680 kWh in a week.
 Both leave a lot on the table: pre-cooling, forecasting, strategic bid
 shading, and reasoning about when the market will be glutted.
 
+### Pre-cooling, and finding out for yourself
+
+The building fabric is a thermal store nobody bills you for, and on most of
+these buildings it holds more energy than the battery does. Over-cool while
+energy is cheap, then coast through the expensive hours with the compressor
+off. `Thermostat` takes an `aim` per call, so trying it costs one line:
+
+```python
+hvac = self.thermostat(o, aim=-0.6 if cheap else 0.4)   # -1 bottom, +1 top
+```
+
+Whether it pays is a question about numbers, not principle. Against you: a
+colder building leaks faster, so the round trip is lossy, and the default
+thermostat already sits near the cheap edge of the band. For you: the
+peak/off-peak ratio, the width of the expensive window, the thermal mass, and
+how much slack the comfort band leaves.
+
+```bash
+python examples/precool_study.py --days 5
+```
+
+sweeps pre-cooling depth against the price spread on a portfolio with no PV
+and no battery, so the fabric is the only flexibility in play:
+
+```
+delivery adder        $0.075   $0.040   $0.020   $0.000
+peak/off-peak ratio     4.1x     5.9x     8.5x    16.3x
+no pre-cool             0.891    0.890    0.889    0.888
+aim -0.9            0.876 +2%  0.854 +4%  0.835 +6%  0.810 +9%
+```
+
+The `--mass`, `--band` and `--comfort` flags move the boundary further. Note
+which axis matters most: the delivery adder is the flat part of the retail
+price, and it compresses the ratio the whole arbitrage lives on — wholesale
+swings 16× here, retail only 4× once $0.075 is added to every hour. Real
+tariffs do exactly that, which is a large part of why demand response is
+harder in practice than on paper.
+
 Three things worth understanding early, all of which the example gets wrong
 in its git history:
 
@@ -617,7 +655,7 @@ src/annex96p2p/
     citylearn_backend.py   the real Annex 96 neighbourhood (opt-in)
 submissions/      drop your file here; two example_*.py templates
 config/           smoke.yaml (fast), default.yaml (a week), ce1_scale.yaml (25 buildings)
-examples/         explain_market.py, check_partition.py
+examples/         explain_market.py, check_partition.py, precool_study.py
 scripts/          scan_submissions.py -- the safety scan
 docs/             assignment.md, security.md, citylearn.md
 tests/            77 tests; run them to verify your checkout
