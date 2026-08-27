@@ -533,8 +533,11 @@ it — its weaknesses are the assignment.
 - it never looks at the previous clearing price
 
 **Its dispatch:**
-- bang-bang thermostat with a half degree deadband
-- never pre-cools, so it uses none of the free storage in the building fabric
+- the thermostat is competent but blind to price — it reacts only to the
+  temperature it already has. It uses the shared
+  [`Thermostat`](src/annex96p2p/api.py), so you are *not* being handed an
+  easy win by out-controlling a bad one. See
+  [pre-cooling](#pre-cooling-and-finding-out-for-yourself).
 - battery runs on a wall clock — charge 10:00–15:00, discharge 18:00–21:00 —
   with no reference to price, PV output, or state of charge
 - nothing reacts to the price it just cleared at
@@ -654,11 +657,11 @@ src/annex96p2p/
     mock.py       self-contained building simulator (the default)
     citylearn_backend.py   the real Annex 96 neighbourhood (opt-in)
 submissions/      drop your file here; two example_*.py templates
-config/           smoke.yaml (fast), default.yaml (a week), ce1_scale.yaml (25 buildings)
+config/           default.yaml is the REAL stock; mock.yaml and smoke.yaml are synthetic
 examples/         explain_market.py, check_partition.py, precool_study.py
 scripts/          scan_submissions.py -- the safety scan
 docs/             assignment.md, security.md, citylearn.md
-tests/            77 tests; run them to verify your checkout
+tests/            91 tests; run them to verify your checkout
 ```
 
 Results land in `results/` as `settlements.csv`, `market.csv` and

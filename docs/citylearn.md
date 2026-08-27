@@ -43,14 +43,27 @@ per step. Measured over 168 steps on five buildings:
 | compressor off | 5560 | 56 |
 | compressor full | 6830 | 2770 |
 | bang-bang at band top | 559 | 551 |
-| **proportional at band top** | **272** | 486 |
+| proportional at band top | 272 | 486 |
 | proportional at band centre | 580 | 596 |
+| **smoothed, aimed above centre** (what ships) | **112** | 3313 |
 
-Note that permanently full is *worse* than permanently off, because it
-overshoots below the lower edge. A few hundred degree-hours a week is close to
-the floor, not a careless agent. So `comfort_price` is **0.10** in
-`config/default.yaml` rather than the 3.00 the mock uses: at 3.00 comfort would
-be 90% of the bill and the market would be irrelevant.
+Two things in that table are worth pausing on. Permanently full is *worse*
+than permanently off, because it overshoots below the lower edge. And the
+smoothed controller — now `api.Thermostat`, used by the default agent and both
+examples — cuts exceedance another 2.4-fold at the cost of 67% more cooling
+energy.
+
+That energy cost is why `comfort_price` is **0.50** in `config/default.yaml`
+rather than the 3.00 the mock uses. It is set from a measured breakeven, not
+by feel: better control pays for its own energy only above roughly
+$0.18/degC-h, so below that ignoring comfort is the rational strategy and the
+term is decorative. At 3.00 comfort would be 90% of the bill and the market
+would be irrelevant.
+
+Splitting exceedance into the part that follows a setpoint step (unavoidable —
+the band moves by up to 7 K within a building) and the part where the band was
+stable, the smoothed controller cuts the *control-attributable* share 24-fold,
+from 694 to 29 degC-h.
 
 **And a result worth building a lab around.** On the real stock the naive
 market *destroys* value -- aggregate gain is negative. The cause is measurable:

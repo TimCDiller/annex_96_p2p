@@ -45,10 +45,9 @@ positions that need pricing differently, and leaving either out is expensive:
 
 WHAT IT SCORES, AND WHY YOU SHOULD NOT TRUST THAT NUMBER
 --------------------------------------------------------
-On the mock neighbourhood, one week, against the default agent:
-
-    balanced portfolio   0.55        solar-rich   0.83
-    storage-rich         0.32        mass-only    0.89
+On the mock neighbourhood, one week, against the default agent, this file
+scores about 0.79 on the balanced portfolio it is assigned. On the real CE1
+homes a five-building portfolio scores about 0.85.
 
 Those numbers come from THIS repo's synthetic 12-building stock and synthetic
 price series. They will not carry over to the real Annex 96 neighbourhood, and
@@ -56,7 +55,8 @@ the reason is worth understanding rather than ignoring:
 
   * every one of the 25 real CE1 homes has BOTH a PV array sized to 70-100% of
     its own demand AND a battery holding 1.5-3.5 hours of its own peak. The
-    all-battery-no-PV portfolio that scores 0.32 here does not exist there.
+    lopsided all-battery-no-PV portfolio this strategy likes best does not
+    exist there at all.
   * so on real data every participant is simultaneously a perishable seller
     and an inventory market maker -- the `balanced` case, not the storage one.
   * the cheap supply this agent lives on is surplus its neighbours would
@@ -109,8 +109,8 @@ class SocSpreadAgent(Agent):
         # value subtracts the compressor load instead of adding it, so the
         # agent believes it has a surplus while it is actually consuming --
         # it then sells energy it does not have and buys it back from the grid
-        # at full price. This one character was worth 0.78 -> 0.32 on the
-        # storage portfolio.
+        # at full price. Getting this one character wrong was worth more than
+        # every other line in this file put together.
         need = sum(o.passive_net_kwh + abs(self._hvac(o)) * o.hp_max_electric_kw
                    for o in obs.values())
 
