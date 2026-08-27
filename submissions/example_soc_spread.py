@@ -69,7 +69,7 @@ which if you build on this.
 """
 import numpy as np
 
-from annex96p2p import Action, Agent
+from annex96p2p import Action, Agent, Thermostat
 
 # The balanced archetype: some PV, some storage. Deliberately not the
 # storage-rich set, because a portfolio with both is where all three legs
@@ -179,18 +179,16 @@ class SocSpreadAgent(Agent):
                 for n, o in obs.items()}
 
     # -------------------------------------------------------------- helpers
-    def _hvac(self, o):
-        """Hug the top of the comfort band: the cheap place to sit when cooling.
+    def reset(self) -> None:
+        # Deliberately the same thermostat as the default agent, so the
+        # difference in the result comes from bidding and storage rather than
+        # from thermal control.
+        self.thermostat = Thermostat()
 
-        Deliberately the same crude thermostat as the default agent, so that
-        the difference in the result comes from bidding and storage rather
-        than from thermal control. Pre-cooling is left for you.
-        """
-        # Proportional, not bang-bang: these heat pumps can overshoot the
-        # band in both directions if simply switched on and off.
-        target = o.comfort_high - self.deadband
-        error = o.indoor_temperature - target
-        return -float(min(1.0, error / 1.5)) if error > 0 else 0.0
+    def _hvac(self, o):
+        if not hasattr(self, "thermostat"):
+            self.thermostat = Thermostat()
+        return self.thermostat(o)
 
 
 AGENT = SocSpreadAgent

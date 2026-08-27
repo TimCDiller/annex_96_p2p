@@ -20,7 +20,8 @@ Student-facing API::
     BUILDINGS = ["B01", "B02"]
     AGENT = MyAgent
 """
-from .api import Action, Agent, Bid, BuildingObs, MarketInfo, TradeResult
+from .api import (Action, Agent, Bid, BuildingObs, MarketInfo, Thermostat,
+                  TradeResult)
 from .baselines import DoNothingAgent, PriceTakerAgent, SimpleRBCAgent
 from .config import Config
 from .ledger import Ledger, Settlement
@@ -34,6 +35,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "Action", "Agent", "Bid", "BuildingObs", "MarketInfo", "TradeResult",
+    "Thermostat",
     "SimpleRBCAgent", "PriceTakerAgent", "DoNothingAgent",
     "Config", "Ledger", "Settlement",
     "Clearing", "clear", "build_price_grid", "describe",

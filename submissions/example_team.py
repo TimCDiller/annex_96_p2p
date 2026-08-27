@@ -33,7 +33,8 @@ from typing import Dict
 
 import numpy as np
 
-from annex96p2p import Action, Agent, BuildingObs, MarketInfo, TradeResult
+from annex96p2p import (Action, Agent, BuildingObs, MarketInfo, Thermostat,
+                        TradeResult)
 
 # --------------------------------------------------------------------------
 # Which buildings you control. Run `python -m annex96p2p buildings` to see
@@ -55,6 +56,12 @@ class ExampleAgent(Agent):
     def reset(self) -> None:
         self.seen_prices = []
         self._plan_cache = None
+        # A competent cooling thermostat, provided by the package. Read its
+        # docstring: thermal control on the real CE1 buildings is harder than
+        # it looks, and getting it wrong costs far more than any bidding
+        # mistake. This agent uses it unmodified -- see the note in dispatch()
+        # about why moving it with the price did not pay here.
+        self.thermostat = Thermostat()
 
     # ------------------------------------------------------------- planning
     def _plan(self, obs: Dict[str, BuildingObs], mkt: MarketInfo) -> dict:
@@ -179,27 +186,32 @@ class ExampleAgent(Agent):
         battery_cmd = (float(np.clip(plan["battery"] / total_power, -1.0, 1.0))
                        if total_power > 0 else 0.0)
 
+        # --- ON PRE-COOLING, WHICH IS NOT HERE -----------------------------
+        # The obvious next move is to shift the thermostat with the price --
+        # `self.thermostat.aim = -0.5 if plan["cheap"] else 0.8 if
+        # plan["expensive"] else 0.2` -- banking cold in the fabric when
+        # energy is cheap and coasting when it is dear. One line.
+        #
+        # It was measured, and on this parameterisation it LOSES: it took this
+        # agent from 1.00 to 1.15, and a standalone test of the thermal lever
+        # alone gave anywhere from +12% to +127% worse depending on the
+        # portfolio. Two reasons, both worth understanding before you try it:
+        #
+        #   * the default thermostat already sits near the top of the comfort
+        #     band, which for cooling is the cheap place to be. Pre-cooling is
+        #     measured against that, not against a badly tuned baseline, so
+        #     the margin is thinner than intuition suggests.
+        #   * the round trip is lossy. A colder building leaks harder, and the
+        #     expensive window here is only three or four hours wide, so you
+        #     hold the cold for a long time to avoid a short peak.
+        #
+        # It is not a dead end -- it pays when the peak is wide, the price
+        # ratio is large, or the fabric is heavy. Work out which of those you
+        # have before spending effort on it.
+
         actions: Dict[str, Action] = {}
         for name, o in obs.items():
-            # --- heat pump -------------------------------------------------
-            # Deliberately kept close to the default agent. In a cooling
-            # climate the cheapest place to sit is the TOP of the comfort
-            # band: every degree colder than necessary leaks straight back
-            # out through the envelope and has to be pumped away again.
-            #
-            # The obvious next step, and a large amount of the money still
-            # on the table, is PRE-COOLING: deliberately overcool during the
-            # cheapest hours so you can ride the evening price peak with the
-            # compressor off. The building fabric is a free battery, and it
-            # is usually a bigger one than the actual battery. It is left
-            # out of this example because doing it well needs a forecast and
-            # some care about the comfort penalty. That part is your job.
-            # Proportional, not bang-bang. These heat pumps are strong
-            # enough to overshoot the comfort band badly if switched fully
-            # on and off, and every degree-hour outside it costs money.
-            target = o.comfort_high - 0.5
-            error = o.indoor_temperature - target
-            hvac = -float(min(1.0, error / 1.5)) if error > 0 else 0.0
+            hvac = self.thermostat(o)
 
             actions[name] = Action(
                 hvac=hvac,

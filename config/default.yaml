@@ -40,15 +40,21 @@ export_price: 0.0          # CE1 rule: no export to the grid
 #     5560; permanently full gives 6830, which is WORSE than off because it
 #     overshoots below the lower edge of the band.
 #
-# So a few hundred degree-hours a week is close to the floor here, not a sign
-# of a careless agent. At $3.00/degC-h that is $816 against roughly $85 of
-# energy -- comfort would be 90% of the bill and the market would be
-# irrelevant. At $0.10 it is about a quarter of the bill: a real term that
-# still leaves the trading exercise visible.
+# The value is set from a measured breakeven, not by feel. A smoothed
+# thermostat cuts control-attributable exceedance 24-fold (694 -> 29 degC-h over
+# 168 hours on all 25 buildings) but spends about 67% more cooling energy. Those
+# two balance at roughly $0.18/degC-h:
 #
-# Raise it if you want thermal control to be the main event; lower it if you
-# want the market to be.
-comfort_price: 0.10
+#   below that   ignoring comfort is the RATIONAL strategy, which makes the
+#                whole comfort term decorative
+#   at 0.50      good control pays for its own energy several times over, and
+#                comfort is around 15% of a well-run bill -- a real term that
+#                still leaves the trading exercise visible
+#   at 3.00      comfort is 90% of the bill and the market is irrelevant
+#
+# Raise it if you want thermal control to be the main event; lower it towards
+# 0.18 if you want the market to be. Below 0.18 do not bother having it.
+comfort_price: 0.50
 price_step: 0.01
 
 # --- compute limits --------------------------------------------------------

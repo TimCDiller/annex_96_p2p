@@ -544,8 +544,13 @@ fail in different ways.
 
 | file | style | score | what it demonstrates |
 |---|---|---:|---|
-| `example_team.py` | a rule stack — if-statements about the price | ~0.94 | price-aware battery, bid/dispatch consistency |
-| `example_soc_spread.py` | a market maker — quotes around a reservation price | ~0.55 | pricing storable vs perishable energy separately |
+| `example_team.py` | a rule stack — if-statements about the price | ~0.97 | price-aware battery, bid/dispatch consistency |
+| `example_soc_spread.py` | a market maker — quotes around a reservation price | ~0.79 | pricing storable vs perishable energy separately |
+
+`example_team.py` sits close to 1.0 on purpose. The default agent is
+thermally competent — it has to be, or the score would just measure who can
+hold a thermostat — so beating it takes real work on the market side. That is
+the assignment.
 
 `example_soc_spread.py` is worth studying even if you write nothing like it.
 It sets its mid-price at `(1 - state_of_charge) x grid_price` and quotes a

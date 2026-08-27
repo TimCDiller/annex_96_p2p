@@ -36,7 +36,8 @@ from typing import Dict
 
 import numpy as np
 
-from .api import Action, Agent, BuildingObs, MarketInfo, TradeResult
+from .api import (Action, Agent, BuildingObs, MarketInfo, Thermostat,
+                  TradeResult)
 
 
 class SimpleRBCAgent(Agent):
@@ -59,13 +60,20 @@ class SimpleRBCAgent(Agent):
     #: modulate rather than switch.
     prop_band = 1.5
 
+    def reset(self) -> None:
+        self._thermostat = Thermostat()
+
     def _hvac(self, o):
-        """Proportional cooling, aimed just inside the top of the band."""
-        target = o.comfort_high - 0.5
-        error = o.indoor_temperature - target
-        if error <= 0:
-            return 0.0
-        return -float(min(1.0, error / self.prop_band))
+        """Delegate to the shared thermostat.
+
+        The default agent is meant to be beaten on PRICE and on the MARKET,
+        which is what this exercise is about -- not on being unable to hold a
+        thermostat. So its thermal control is competent; everything else about
+        it is naive.
+        """
+        if not hasattr(self, "_thermostat"):
+            self._thermostat = Thermostat()
+        return self._thermostat(o)
 
     def bid(self, obs: Dict[str, BuildingObs], mkt: MarketInfo) -> np.ndarray:
         bid = mkt.new_bid()
