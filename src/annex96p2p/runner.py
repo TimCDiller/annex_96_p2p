@@ -242,8 +242,16 @@ class _Guard:
 def simulate(backend: Backend, participants: List[Participant], tariff: Tariff,
              max_bid_kwh: float = 500.0, progress: bool = False,
              call_timeout_seconds: float = 0.0,
-             run_budget_seconds: float = 0.0) -> RunResult:
-    """Run the whole simulation and return the ledger."""
+             run_budget_seconds: float = 0.0,
+             recorder=None) -> RunResult:
+    """Run the whole simulation and return the ledger.
+
+    `recorder`, if given, is called once per timestep with a dict of
+    everything that happened that hour -- the market info, every
+    participant's bid vector, the clearing, the observations and the physical
+    outcomes. It exists so a script can instrument a run without
+    reimplementing this loop and drifting out of step with it.
+    """
     backend.reset()
     for participant in participants:
         try:
@@ -315,6 +323,11 @@ def simulate(backend: Backend, participants: List[Participant], tariff: Tariff,
                 grid_export_price=tariff.export_price, degree_hours=degree_hours,
                 comfort_price=tariff.comfort_price,
             )
+
+        if recorder is not None:
+            recorder(dict(timestep=t, market=market_info, bids=bids,
+                          clearing=clearing, observations=observations,
+                          outcomes=outcomes))
 
         last_price, last_volume = clearing.price, clearing.volume
 

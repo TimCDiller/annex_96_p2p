@@ -13,7 +13,7 @@ class Config:
     # -- what to simulate ---------------------------------------------------
     #: Timesteps to run, in days. Leave None for the dataset's full 720.
     days: Optional[int] = None
-    citylearn_dataset: str = "annex96_ce1_tx_neighborhood"
+    citylearn_dataset: str = "annex96_ce1_vt_neighborhood"
     citylearn_schema: Optional[str] = None
     # Path to a clone of the Annex 96 exercise repo. Put on sys.path, so the
     # vendored CityLearn fork does not have to be pip-installed.

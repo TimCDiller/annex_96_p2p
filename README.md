@@ -91,6 +91,7 @@ There are optional extras for the common cases:
 ```bash
 pip install -e ".[ml]"      # torch, scikit-learn, safetensors
 pip install -e ".[rl]"      # torch, gymnasium, stable-baselines3, safetensors
+pip install -e ".[viz]"     # plotly, for examples/sample_run.py
 ```
 
 They are extras rather than dependencies so a plain clone still installs in
@@ -516,45 +517,50 @@ it — its weaknesses are the assignment.
 Two worked examples ship, in deliberately different styles. Read both — they
 fail in different ways.
 
-One week on the real stock, the same five buildings, everyone else on the
-default agent:
+Four agents ship, in deliberately different styles. All four share the same
+dispatch -- hug the bottom of the comfort band, cover the load from the battery,
+touch the grid only when the battery is flat -- so the difference between them
+is **bidding and nothing else**.
 
-| strategy | bill | energy | comfort | vs default |
-|---|---:|---:|---:|---:|
-| default agent | $155.41 | $116.79 | $38.62 | — |
-| `example_team.py` | $141.48 | $102.87 | $38.62 | **−9.0%** |
-| `example_soc_spread.py` | $129.28 | $90.66 | $38.62 | **−16.8%** |
+| file | how it prices | score |
+|---|---|---:|
+| `example_surplus.py` | four obvious rules: self-consume, charge on surplus, dump when full, pay 95% when empty | **0.945** |
+| `example_flat50.py` | assumes the market clears at 50% of next hour's grid price | 0.985 |
+| `example_team.py` | a rule stack keyed off price percentiles | 0.994 |
+| `example_inverse_soc.py` | divider at `(1 - state_of_charge) x grid_price` | **1.057** |
 
-Comfort is identical in all three, because all three use the shipped
-`Thermostat`. The whole difference is in the market — which is the point: the
-default is thermally competent, so the score measures market skill rather than
-who can hold a thermostat.
+One week of the Vermont January, five buildings each, everyone else on the
+default agent. Note the order: the **simplest** agent wins and the most
+sophisticated one **loses**. `example_inverse_soc` prices its battery as an
+arbitrage asset, which is right in a cooling month and wrong in a heating one --
+in January the building is in deficit nearly every hour, so an empty battery
+makes it bid 95% of grid to refill something it never needed to fill. Whether
+that is a flaw in the agent or a fact about the season is a good question to
+put to a student.
 
-Both templates put **the battery before the grid**: whatever the market does
-not supply comes out of storage while there is charge in it, because a kWh
-already in the battery is paid for and a kWh off the meter is the most
-expensive one available. Neither holds charge back for the evening peak, and
-that is the obvious next move.
+### See it for yourself
 
-`example_team.py` is worth reading for one bug in its own history. It used to
-bid its *passive* position and leave the heat pump out — the exact mistake its
-docstring warns about — and on these buildings, where the compressor draws
-3.5 kW, that alone put it **above 1.0**, worse than doing nothing clever. A
-test in `tests/test_citylearn.py` now pins it, and asserts zero agent failures
-as well as a score: a submission that raises every timestep is silently
-replaced by the default agent, so a plausible-looking leaderboard is not
-evidence that it ran.
+```bash
+pip install -e ".[viz]"
+python examples/sample_run.py --days 7
+```
 
-`example_soc_spread.py` is worth studying even if you write nothing like it.
-It sets its mid-price at `(1 - state_of_charge) x grid_price` and quotes a
-spread around that, which means it buys the midday glut and sells into the
-evening peak with **no forecast at all** — the inventory does the reasoning.
-It also separates the three positions a portfolio actually holds: must-have
-load, perishable PV surplus, and storable battery charge. Pricing the second
-with the rule meant for the third curtailed 680 kWh in a week.
+writes a self-contained HTML booklet: how the market cleared, whether the
+buildings stayed inside their comfort bands, and **one tab per agent showing
+its whole bid book** -- price up the side, time along the bottom, colour for
+quantity with blue buying and red selling, and a cross wherever the market
+actually cleared. A bid only matters relative to those crosses, so that plot
+tells you at a glance whether an agent is pricing itself into the market or out
+of it.
 
-Both leave a lot on the table: pre-cooling, forecasting, strategic bid
-shading, and reasoning about when the market will be glutted.
+It also computes why the market is thin, which is the first thing anyone asks.
+On this dataset the peer-to-peer market handles around **1% of the energy**,
+for three reasons the booklet quantifies: in January only about 10% of
+participant-hours are net-producing, so there is barely a supply side; the
+compressor draws 19.5 kW against a 2.9 kW battery, so storage cannot even cover
+a building's own heating let alone leave a surplus; and the battery-first rule
+makes every agent self-sufficient, which removes the demand the sellers needed.
+Several hundred kWh still gets curtailed, so there is unmet trade to go after.
 
 ### Pre-cooling, and finding out for yourself
 
@@ -618,7 +624,7 @@ src/annex96p2p/
     citylearn_backend.py   the Annex 96 neighbourhood
 submissions/      drop your file here; two example_*.py templates
 config/           default.yaml -- the only one
-examples/         explain_market.py
+examples/         explain_market.py, sample_run.py
 tests/stub.py     a physics-free backend, for contract tests only
 scripts/          scan_submissions.py -- the safety scan
 docs/             assignment.md, security.md, citylearn.md

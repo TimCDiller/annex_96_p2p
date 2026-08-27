@@ -128,6 +128,22 @@ class CityLearnBackend(Backend):
         horizon = int(getattr(self.env, "time_steps", 0) or 720)
         self.n_timesteps = min(horizon, int(days) * 24) if days else horizon
 
+        # WHICH HVAC DEVICE IS ACTUALLY ACTUATED. Texas exposes
+        # `cooling_device` and Vermont `heating_device`, and the other one is
+        # present but vestigial -- 0.09 kW of cooling on a Vermont house
+        # against 19.5 kW of heating. Reading the wrong one understates the
+        # load by two orders of magnitude, so take it from the action list.
+        self._hvac_kind = []
+        for names in self._act_names:
+            kind = None
+            for a in names:
+                if "heating" in a:
+                    kind = "heating"
+                    break
+                if "cooling" in a:
+                    kind = "cooling"
+            self._hvac_kind.append(kind)
+
         # Conversion factor per building: our Action.battery is a fraction of
         # rated POWER, CityLearn wants a fraction of CAPACITY.
         self._batt_scale = []
@@ -182,12 +198,13 @@ class CityLearnBackend(Backend):
             base = (float(_first(v, "non_shiftable_load"))
                     + float(_first(v, "dhw_electricity_consumption")))
 
-            cd = getattr(b, "cooling_device", None)
+            heating = self._hvac_kind[i] == "heating"
+            cd = getattr(b, "heating_device" if heating else "cooling_device", None)
             outdoor = float(_first(v, "outdoor_dry_bulb_temperature", default=25.0))
             cop = 3.0
             if cd is not None and hasattr(cd, "get_cop"):
                 try:
-                    cop = float(np.ravel(cd.get_cop(outdoor, False))[0])
+                    cop = float(np.ravel(cd.get_cop(outdoor, heating))[0])
                 except Exception:                                # noqa: BLE001
                     pass
 

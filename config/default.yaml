@@ -6,7 +6,7 @@
 # 720-step run is about two minutes -- doubled while `reference: true`.
 # Set `days:` to 2 or 3 while iterating.
 citylearn_root: ../annex96_common_exercise_1
-citylearn_schema: ../annex96_common_exercise_1/data/datasets/annex96_ce1_tx_neighborhood/schema.json
+citylearn_schema: ../annex96_common_exercise_1/data/datasets/annex96_ce1_vt_neighborhood/schema.json
 days:                      # blank = the dataset's full 720 timesteps
 
 submissions: submissions

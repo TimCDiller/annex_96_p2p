@@ -46,12 +46,19 @@ from annex96p2p import (Action, Agent, BuildingObs, MarketInfo, Thermostat,
 # set to hunt for. What differs between them is scale, and how volatile the
 # occupant setpoint schedule is.
 # --------------------------------------------------------------------------
+# Building names are ResStock ids and they are dataset-specific: the Vermont
+# and Texas neighbourhoods share none of them. If you switch datasets, run
+#
+#     python -m annex96p2p buildings
+#
+# and paste the ids you were assigned. A submission naming buildings that do
+# not exist is reported and skipped -- it does not silently control nothing.
 BUILDINGS = [
-    "resstock-amy2018-2021-release-1-6887",
-    "resstock-amy2018-2021-release-1-123182",
-    "resstock-amy2018-2021-release-1-155572",
-    "resstock-amy2018-2021-release-1-20687",
-    "resstock-amy2018-2021-release-1-21356",
+    "resstock-amy2018-2021-release-1-112208",
+    "resstock-amy2018-2021-release-1-147002",
+    "resstock-amy2018-2021-release-1-179247",
+    "resstock-amy2018-2021-release-1-199613",
+    "resstock-amy2018-2021-release-1-20199",
 ]
 
 NAME = "example_team"
@@ -59,6 +66,13 @@ NAME = "example_team"
 
 class ExampleAgent(Agent):
     """Price-aware battery, honest bidding, plain thermostat."""
+
+    #: Where to sit in the comfort band: -1 is the bottom edge. In a
+    #: heating-dominated month the bottom is the CHEAP end -- every degree
+    #: warmer than comfort requires is heat that leaks straight back out. All
+    #: four example agents use the same value, so the difference between them
+    #: is bidding and nothing else.
+    aim = -0.85
 
     def reset(self) -> None:
         self.seen_prices = []
@@ -103,7 +117,7 @@ class ExampleAgent(Agent):
         # `Thermostat` is idempotent per timestep, so asking it here and again
         # in dispatch() returns the same command both times.
         passive = sum(o.passive_net_kwh
-                      + abs(self.thermostat(o)) * o.hp_max_electric_kw
+                      + abs(self.thermostat(o, aim=self.aim)) * o.hp_max_electric_kw
                       for o in obs.values())
         surplus = max(0.0, -passive)
 
@@ -258,7 +272,7 @@ class ExampleAgent(Agent):
 
         actions: Dict[str, Action] = {}
         for name, o in obs.items():
-            hvac = self.thermostat(o)
+            hvac = self.thermostat(o, aim=self.aim)
 
             actions[name] = Action(
                 hvac=hvac,

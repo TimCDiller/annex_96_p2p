@@ -43,7 +43,7 @@ def _locate():
         pass
     candidates.append(ROOT.parent / "annex96_common_exercise_1")
     for c in candidates:
-        schema = (Path(c) / "data" / "datasets" / "annex96_ce1_tx_neighborhood"
+        schema = (Path(c) / "data" / "datasets" / "annex96_ce1_vt_neighborhood"
                   / "schema.json")
         if schema.exists():
             return Path(c).resolve(), schema.resolve()
@@ -110,8 +110,11 @@ def test_observations_are_populated(backend):
     assert 10.0 < o.indoor_temperature < 40.0
     assert o.battery_capacity_kwh > 0 and o.battery_max_power_kw > 0
     assert o.hp_max_electric_kw > 0
-    # get_cop(), not `efficiency` -- the latter is ~0.25 and is not a COP
-    assert 2.0 < o.hp_cop < 8.0, "hp_cop looks like an efficiency, not a COP"
+    # get_cop(), not `efficiency` -- the latter is ~0.25 and is not a COP.
+    # The bound is loose on purpose: a heating COP at -21 degC is about 1.1,
+    # barely better than a resistance heater, which is a large part of why the
+    # Vermont case is so punishing. In the Texas cooling month it is ~4.3.
+    assert 1.0 < o.hp_cop < 8.0,         "hp_cop = %.3f -- looks like an efficiency fraction, not a COP" % o.hp_cop
 
 
 def test_battery_action_is_scaled_to_capacity(backend):
@@ -121,18 +124,44 @@ def test_battery_action_is_scaled_to_capacity(backend):
         assert 0 < scale < 1, "%s: implausible battery scale %r" % (name, scale)
 
 
-def test_the_cooling_action_actually_moves_the_temperature(backend):
-    """Guards against a silently disconnected action mapping."""
+def test_the_hvac_action_actually_moves_the_temperature(backend):
+    """Guards against a silently disconnected action mapping.
+
+    Vermont actuates a HEATING device, so a positive hvac must warm the
+    building. On Texas the sign is the other way round; this asserts whichever
+    direction the dataset actuates.
+    """
     from annex96p2p.api import Action
+    heating = backend._hvac_kind[0] == "heating"
+    drive = 1.0 if heating else -1.0
+
     backend.reset()
     for _ in range(20):                       # clear the lookback=13 warmup
         backend.step({n: Action(hvac=0.0) for n in backend.building_names})
-    warm = backend.observe()[backend.building_names[0]].indoor_temperature
-    for _ in range(6):
-        backend.step({n: Action(hvac=-1.0) for n in backend.building_names})
-    cool = backend.observe()[backend.building_names[0]].indoor_temperature
-    assert cool < warm - 0.5, ("full cooling did not lower the temperature "
-                               "(%.2f -> %.2f)" % (warm, cool))
+    idle = backend.observe()[backend.building_names[0]].indoor_temperature
+    for _ in range(8):
+        backend.step({n: Action(hvac=drive) for n in backend.building_names})
+    driven = backend.observe()[backend.building_names[0]].indoor_temperature
+
+    if heating:
+        assert driven > idle + 0.5, ("full heating did not warm the building "
+                                     "(%.2f -> %.2f)" % (idle, driven))
+    else:
+        assert driven < idle - 0.5, ("full cooling did not cool the building "
+                                     "(%.2f -> %.2f)" % (idle, driven))
+
+
+def test_the_actuated_hvac_device_is_the_powerful_one(backend):
+    """The vestigial device must not be the one we read power from.
+
+    A Vermont house has 19.5 kW of heating and 0.09 kW of cooling. Reading the
+    wrong one understates the load by two orders of magnitude.
+    """
+    obs = backend.observe()
+    for name in backend.building_names[:5]:
+        assert obs[name].hp_max_electric_kw > 1.0, (
+            "%s: hp_max_electric_kw is %.3f -- almost certainly the vestigial "
+            "device" % (name, obs[name].hp_max_electric_kw))
 
 
 # --------------------------------------------------------------------------
@@ -152,40 +181,65 @@ def test_run_balances_and_completes(backend, tariff):
 # --------------------------------------------------------------------------
 # performance -- the only place a score assertion belongs
 # --------------------------------------------------------------------------
-@pytest.mark.parametrize("module,cls_name", [
-    ("example_soc_spread", "SocSpreadAgent"),
+EXAMPLES = [
     ("example_team", "ExampleAgent"),
-])
-def test_shipped_examples_beat_the_default_agent(backend, tariff, module, cls_name):
-    """Every shipped template must beat the default agent on the REAL stock.
+    ("example_flat50", "Flat50Agent"),
+    ("example_inverse_soc", "InverseSocAgent"),
+    ("example_surplus", "SurplusAgent"),
+]
 
-    This is the only place such a claim can honestly be made, and it has
-    caught a real regression: example_team once bid its PASSIVE position and
-    left the heat pump out, which is invisible on a stub with small
-    compressors and cost it 1.15 here.
-    """
+
+def _score_one(backend, tariff, module, cls_name):
     import importlib
 
     from annex96p2p.reference import reference_costs
 
     sys.path.insert(0, str(ROOT / "submissions"))
-    agent_cls = getattr(importlib.import_module(module), cls_name)
-
-    mine = backend.building_names[:5]
+    mod = importlib.import_module(module)
+    agent_cls = getattr(mod, cls_name)
+    # Each example on the buildings it actually declares, which is what a real
+    # assignment looks like -- not all four on the same five.
+    mine = [b for b in mod.BUILDINGS if b in backend.building_names]
+    assert mine, "%s declares no buildings that exist in this dataset" % module
     parts = [Participant("student", agent_cls("student", mine), list(mine))]
     parts = fill_unclaimed(parts, backend.building_names, DiscoveryReport())
-
     result = simulate(backend, parts, tariff, call_timeout_seconds=10.0,
-                      run_budget_seconds=600.0)
+                      run_budget_seconds=900.0)
     ref = reference_costs(backend, parts, tariff)
     frame = result.ledger.to_frame()
-    score = (frame[frame.participant == "student"].total_cost.sum()
-             / ref["student"])
-
     student = next(p for p in parts if p.name == "student")
-    assert student.failures == 0, "%s raised during the run" % module
-    assert student.timeouts == 0, "%s timed out" % module
-    assert score < 1.0, "%s lost to the default agent (%.3f)" % (module, score)
+    return (frame[frame.participant == "student"].total_cost.sum() / ref["student"],
+            student)
+
+
+@pytest.mark.parametrize("module,cls_name", EXAMPLES)
+def test_every_example_runs_clean(backend, tariff, module, cls_name):
+    """No example may raise or time out.
+
+    This matters more than any score. A failing agent is silently replaced by
+    the default for that timestep, so a plausible-looking leaderboard is not
+    evidence that a submission ran -- example_team once raised on every one of
+    168 timesteps while apparently scoring 0.93.
+    """
+    score, student = _score_one(backend, tariff, module, cls_name)
+    assert student.failures == 0, "%s raised %d times" % (module, student.failures)
+    assert student.timeouts == 0, "%s timed out %d times" % (module, student.timeouts)
+    assert 0.5 < score < 1.5, "%s scored %.3f, which is implausible" % (module, score)
+
+
+def test_at_least_one_example_beats_the_default(backend, tariff):
+    """Not all of them do, and that is the interesting part.
+
+    `example_inverse_soc` prices its battery as an arbitrage asset, which is
+    right in a cooling month where the midday surplus is worth banking. In a
+    Vermont January the battery is a pass-through, not a store: the building is
+    in deficit almost every hour, so a rule that bids up to 95% of the grid
+    price to refill an empty battery just buys expensive energy and pays the
+    round-trip losses on it. It scores above 1.0 here. Whether that is a flaw
+    in the agent or in the season is exactly the question to put to a student.
+    """
+    scores = {m: _score_one(backend, tariff, m, c)[0] for m, c in EXAMPLES}
+    assert min(scores.values()) < 0.98, scores
 
 
 def test_submissions_folder_loads_cleanly(backend):

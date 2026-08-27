@@ -315,10 +315,14 @@ class Thermostat:
     def __init__(self, aim: float = 0.2, gain: float = 0.8,
                  smooth: float = 0.5):
         #: Where to sit inside the band, as a fraction of the half-width:
-        #: 0 is the centre, +1 the top edge. Just above centre is the value
-        #: that measured best on the real stock. Riding nearer the top edge is
-        #: cheaper in energy but leaves no headroom when the occupant setpoint
-        #: steps DOWN by several K, which it does.
+        #: 0 is the centre, -1 the bottom edge, +1 the top.
+        #:
+        #: Which end is the CHEAP end depends on the season, and the two
+        #: Annex 96 datasets disagree. Cooling in Texas, the top edge is cheap:
+        #: every degree colder than necessary leaks straight back in. Heating
+        #: in Vermont it is the bottom edge, for the mirror-image reason. So
+        #: there is no single right default -- pick it for the dataset you are
+        #: running, and the example agents pass it explicitly.
         self.aim = aim
         #: Proportional gain, in half-band widths. Larger is gentler.
         self.gain = gain
@@ -344,8 +348,14 @@ class Thermostat:
         mid = 0.5 * (o.comfort_low + o.comfort_high)
         half = max(0.25, 0.5 * (o.comfort_high - o.comfort_low))
         target = mid + aim * half
+
+        # Signed and bidirectional: negative cools, positive heats. The same
+        # expression covers both, which matters because the Annex 96 datasets
+        # are not the same problem -- Texas actuates a cooling device in June,
+        # Vermont a heating device in January, and a cooling-only controller
+        # lets a Vermont building fall to 5 degC against a 16-20 degC band.
         error = o.indoor_temperature - target
-        raw = min(1.0, max(0.0, error / (half * self.gain)))
+        raw = -min(1.0, max(-1.0, error / (half * self.gain)))
 
         # Smoothing damps the overshoot a 15 kW heat pump would otherwise
         # produce on an hourly step. Outside the band we drop the filter and
@@ -375,6 +385,6 @@ class Thermostat:
         self._u[o.name] = u
         if len(self._cache) > 4096:
             self._cache.clear()
-        self._cache[key] = -u
-        return -u                      # negative is cooling
+        self._cache[key] = u
+        return u              # negative cools, positive heats
 

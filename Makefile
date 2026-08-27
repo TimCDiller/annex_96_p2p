@@ -1,4 +1,4 @@
-.PHONY: install test explain buildings run tournament scan docker-tournament clean
+.PHONY: install test explain buildings run tournament booklet scan docker-tournament clean
 
 install:
 	python -m pip install -e ".[dev]"
@@ -19,6 +19,10 @@ run:
 
 tournament:
 	python -m annex96p2p tournament --config config/default.yaml
+
+# The sample run: every example agent, plus an HTML booklet of what happened.
+booklet:
+	python examples/sample_run.py --days 7
 
 scan:
 	python scripts/scan_submissions.py submissions/
