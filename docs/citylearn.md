@@ -6,9 +6,64 @@ dataset download. It is a teaching model, not a research model.
 
 This document covers swapping in the actual Common Exercise 1 homes.
 
-> **Status: the adapter is written but not yet verified against the upstream
-> dataset.** Everything else in the repo is tested and runs. Work through the
-> checklist at the bottom once, then delete this warning.
+> **Status: verified against the upstream Texas dataset.** 25 buildings, 720
+> timesteps, run end to end with a five-building portfolio. The facts it
+> relies on, and the four that were wrong in the first draft, are recorded in
+> the adapter's own docstring.
+
+## What the real stock does differently
+
+Four things bit hard enough to be worth stating before you switch a lab over.
+
+**1. The action space is not `[-1, 1]`.** The battery action is a fraction of
+CAPACITY per timestep bounded by the power rating (2.5 kW over 15 kWh gives
+0.1667), and the cooling action is one-sided `[0, 1]`. Our `Action.battery` is
+a fraction of RATED POWER, so the adapter converts by
+`nominal_power / capacity`.
+
+**2. `cooling_device.efficiency` is not a COP.** It is 0.253 on building 0 --
+a fraction-of-Carnot figure. `get_cop()` returns about 4.25. Reporting the
+former as a COP is wrong by a factor of seventeen.
+
+**3. The first 13 timesteps are a warmup.** The buildings are
+`LSTMDynamicsBuilding` with `lookback = 13`, so the indoor temperature is
+pinned at its initial value until the model has that much history -- the
+cooling action provably does nothing before then. Harmless over 720 steps;
+do not draw conclusions from a two-day run.
+
+**4. Comfort is much harder here, and the price must be recalibrated.** The
+band is the observed setpoint plus or minus `comfort_band`, about 19.8-23.8 degC
+on building 0, while June in Texas pushes the fabric to 28 degC unaided. The heat
+pumps are ~3.5 kW electric at a COP over 4 -- roughly 15 kW of cooling on one
+house -- and the LSTM responds violently to hourly switching, with 6-9 K swings
+per step. Measured over 168 steps on five buildings:
+
+| control | degC-h | cooling kWh |
+|---|---:|---:|
+| compressor off | 5560 | 56 |
+| compressor full | 6830 | 2770 |
+| bang-bang at band top | 559 | 551 |
+| **proportional at band top** | **272** | 486 |
+| proportional at band centre | 580 | 596 |
+
+Note that permanently full is *worse* than permanently off, because it
+overshoots below the lower edge. A few hundred degree-hours a week is close to
+the floor, not a careless agent. So `comfort_price` is **0.10** in
+`config/default.yaml` rather than the 3.00 the mock uses: at 3.00 comfort would
+be 90% of the bill and the market would be irrelevant.
+
+**And a result worth building a lab around.** On the real stock the naive
+market *destroys* value -- aggregate gain is negative. The cause is measurable:
+the default agent bids its passive net (load minus solar) and then runs the
+compressor, so on buildings that have both PV and a large heat pump it sells
+energy it is about to consume. Over 72 timesteps, **45.7 of 115.1 kWh sold were
+never produced** -- 40% of all sales phantom, across 259 participant-hours. It
+is paid $0.01 for them and buys the shortfall from the grid at full price.
+Every real CE1 home has both PV and a big compressor, which is why this bites
+here and barely showed on the synthetic stock.
+
+Fixing it is a one-line change in a student's bid, and it is the single most
+instructive thing in the exercise.
 
 ## Setup
 

@@ -186,7 +186,11 @@ class SocSpreadAgent(Agent):
         the difference in the result comes from bidding and storage rather
         than from thermal control. Pre-cooling is left for you.
         """
-        return -1.0 if o.indoor_temperature > o.comfort_high - self.deadband else 0.0
+        # Proportional, not bang-bang: these heat pumps can overshoot the
+        # band in both directions if simply switched on and off.
+        target = o.comfort_high - self.deadband
+        error = o.indoor_temperature - target
+        return -float(min(1.0, error / 1.5)) if error > 0 else 0.0
 
 
 AGENT = SocSpreadAgent

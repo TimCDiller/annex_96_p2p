@@ -11,7 +11,7 @@ import yaml
 @dataclass
 class Config:
     # -- what to simulate ---------------------------------------------------
-    backend: str = "mock"                  # "mock" or "citylearn"
+    backend: str = "citylearn"             # "citylearn" or "mock"
     days: int = 7
     n_per_archetype: int = 3               # mock backend: 4 archetypes x this
     # Exact building count, overriding n_per_archetype. Set this to 25 to
@@ -20,6 +20,9 @@ class Config:
     n_buildings: Optional[int] = None
     citylearn_dataset: str = "annex96_ce1_tx_neighborhood"
     citylearn_schema: Optional[str] = None
+    # Path to a clone of the Annex 96 exercise repo. Put on sys.path, so the
+    # vendored CityLearn fork does not have to be pip-installed.
+    citylearn_root: Optional[str] = None
 
     # -- who plays ----------------------------------------------------------
     submissions: str = "submissions"

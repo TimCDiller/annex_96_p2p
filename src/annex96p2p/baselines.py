@@ -19,8 +19,8 @@ What it does badly, on purpose:
     * It never looks at the previous clearing price.
 
   DISPATCH
-    * The thermostat is bang-bang with a half-degree deadband, so it
-      overshoots, then has to undo the overshoot.
+    * The thermostat only ever reacts to the temperature it already has --
+      it has no notion that energy is about to get more expensive.
     * It never pre-cools. Cheap overnight energy and a heavy building are
       free storage and it uses neither.
     * The battery runs on a fixed clock -- charge 10:00-15:00, discharge
@@ -51,6 +51,22 @@ class SimpleRBCAgent(Agent):
     #: Thermostat deadband, in degrees C.
     deadband = 0.5
 
+    #: Proportional band for the thermostat, in K. The heat pumps in the real
+    #: CE1 homes are ~3.5 kW electric at a COP over 4 -- about 15 kW of
+    #: cooling on a single house. Bang-bang control on that overshoots the
+    #: comfort band in both directions: left off the building runs to 28 degC,
+    #: held fully on it reaches 16 degC, against a band of 19.8-23.8. So
+    #: modulate rather than switch.
+    prop_band = 1.5
+
+    def _hvac(self, o):
+        """Proportional cooling, aimed just inside the top of the band."""
+        target = o.comfort_high - 0.5
+        error = o.indoor_temperature - target
+        if error <= 0:
+            return 0.0
+        return -float(min(1.0, error / self.prop_band))
+
     def bid(self, obs: Dict[str, BuildingObs], mkt: MarketInfo) -> np.ndarray:
         bid = mkt.new_bid()
 
@@ -74,13 +90,8 @@ class SimpleRBCAgent(Agent):
         actions: Dict[str, Action] = {}
 
         for name, o in obs.items():
-            # --- bang-bang thermostat, no price awareness whatsoever -------
-            if o.indoor_temperature > o.comfort_high - self.deadband:
-                hvac = -1.0                      # full cooling
-            elif o.indoor_temperature < o.comfort_low + self.deadband:
-                hvac = +1.0                      # full heating
-            else:
-                hvac = 0.0                       # coast
+            # --- thermostat, with no price awareness whatsoever ------------
+            hvac = self._hvac(o)
 
             # --- battery on a wall clock ----------------------------------
             battery = 0.0

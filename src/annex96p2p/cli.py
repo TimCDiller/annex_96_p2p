@@ -28,7 +28,8 @@ def make_backend(cfg: Config):
     if cfg.backend == "citylearn":
         from .backends.citylearn_backend import CityLearnBackend
         return CityLearnBackend(dataset=cfg.citylearn_dataset,
-                                schema=cfg.citylearn_schema, days=cfg.days)
+                                schema=cfg.citylearn_schema, days=cfg.days,
+                                root=cfg.citylearn_root)
     raise SystemExit("unknown backend %r (expected 'mock' or 'citylearn')" % cfg.backend)
 
 

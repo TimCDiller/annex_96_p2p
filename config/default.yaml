@@ -1,82 +1,64 @@
-# The standard assignment run: one full week.
-backend: mock
-days: 7
-n_per_archetype: 3
+# THE DEFAULT: the real Annex 96 Common Exercise 1 neighbourhood.
+# Texas, 25 homes, 720 timesteps (30 days from June).
+#
+# This needs a clone of the exercise repo and PyTorch. If you have not got
+# those yet, use config/mock.yaml -- it needs nothing but numpy and runs a
+# week in a tenth of a second. Agent code is identical either way.
+#
+# Building the environment takes ~30 s and each timestep ~0.15 s, so a full
+# 720-step run is about two minutes -- doubled while `reference: true`.
+# Develop against config/mock.yaml, which does a week in a tenth of a second,
+# then confirm here.
+backend: citylearn
+citylearn_root: ../annex96_common_exercise_1
+citylearn_schema: ../annex96_common_exercise_1/data/datasets/annex96_ce1_tx_neighborhood/schema.json
+days:                      # blank = the dataset's full 720 timesteps
 
 submissions: submissions
-default_agent: rbc          # rbc | pricetaker | nothing
-unclaimed_mode: individual  # individual | pooled
-conflict_policy: first      # first | error  (the tournament forces "error")
+default_agent: rbc
+unclaimed_mode: individual
+conflict_policy: first
 
 # --- prices ----------------------------------------------------------------
-# Leave price_csv empty to use the built-in synthetic ERCOT-like summer
-# series. To use real data instead, point price_csv at a CSV with an
-# "electricity_pricing" column, one row per hour.
+# CE1 ships no pricing at all, so prices come from here rather than from the
+# schema. Swap in real ERCOT day-ahead data for June to make this realistic.
 price_csv:
-delivery_adder: 0.075       # $/kWh added to wholesale to make the retail price
-price_volatility: 0.15      # day-to-day variation
-export_price: 0.0           # 0.0 keeps the CE1 no-grid-export rule
-comfort_price: 3.0          # $ per degC-hour outside the comfort band
-price_step: 0.01            # bid price resolution
+delivery_adder: 0.075
+price_volatility: 0.15
+export_price: 0.0          # CE1 rule: no export to the grid
+# NOTE the value, and why it is not the 3.00 the mock backend uses. The
+# comfort price has to be calibrated to the building stock, and these
+# buildings are far harder to keep comfortable than the synthetic ones:
+#
+#   * the band is the observed setpoint +/- comfort_band, about 19.8-23.8 degC
+#     on building 0, while June in Texas pushes the fabric to 28 degC unaided;
+#   * the heat pumps are ~3.5 kW electric at a COP over 4, so about 15 kW of
+#     cooling on a single house, and the LSTM dynamics respond violently to
+#     hourly switching -- temperature swings of 6-9 K per step are normal;
+#   * measured over 168 steps on five buildings, the best of five simple
+#     controllers still leaves 272 degC-h. Compressor permanently off gives
+#     5560; permanently full gives 6830, which is WORSE than off because it
+#     overshoots below the lower edge of the band.
+#
+# So a few hundred degree-hours a week is close to the floor here, not a sign
+# of a careless agent. At $3.00/degC-h that is $816 against roughly $85 of
+# energy -- comfort would be 90% of the bill and the market would be
+# irrelevant. At $0.10 it is about a quarter of the bill: a real term that
+# still leaves the trading exercise visible.
+#
+# Raise it if you want thermal control to be the main event; lower it if you
+# want the market to be.
+comfort_price: 0.10
+price_step: 0.01
 
-# --- guard rails -----------------------------------------------------------
+# --- compute limits --------------------------------------------------------
+call_timeout_seconds: 5.0
+run_budget_seconds: 120.0
+
 max_bid_kwh: 500.0
 slow_call_seconds: 1.0
 seed: 0
 
-# --- instructor: pin the partition -----------------------------------------
-# Uncomment for a graded tournament. With strict_assignments on, a submission
-# that claims a building it was not assigned is an error rather than a warning.
-#
-# SPECIALISE THE PORTFOLIOS. This is the setting most likely to break the
-# exercise if you get it wrong, and the intuitive choice is the wrong one.
-#
-# Giving each team "one of each archetype" feels fair and complementary. It
-# is also what kills the market: a team that can balance itself internally
-# will, and should, because moving energy between two buildings you already
-# own is free and never touches the market. Measured over one week with the
-# same default agent on the same twelve buildings:
-#
-#   each team one archetype     328 kWh traded    $42 of value created
-#   a dominant archetype each   199 kWh traded    $25
-#   one of each archetype        23 kWh traded     $2      <- market is dead
-#
-# Run `python examples/check_partition.py` to reproduce that, and to test
-# any partition of your own before you hand it out.
-#
-# The buildings cycle through the four archetypes in order, so B01/B05/B09
-# are all solar-rich, B02/B06/B10 all storage-rich, and so on.
-#
-# strict_assignments: true
-# assignments:
-#   solar_team:    [B01, B05, B09]   # all PV, no storage -> structural seller
-#   storage_team:  [B02, B06, B10]   # all battery, no PV -> arbitrageur
-#   mass_team:     [B03, B07, B11]   # heavy fabric only  -> flexible load
-#   balanced_team: [B04, B08, B12]   # some of both
-#
-# Note that these four face genuinely different problems, which is realistic
-# and makes for a better discussion, but does mean the scores are not quite
-# like-for-like. If you want them comparable, rotate the assignment between
-# labs and average, rather than flattening the portfolios.
-#
-# Also: more participants means a deeper market. Twelve students holding one
-# building each trade about as much as four teams of three, because every
-# ownership boundary is a boundary energy has to cross by trading.
-
-# --- how much compute a submission may use ---------------------------------
-# call_timeout_seconds: the most a single bid() or dispatch() call may take.
-#   Overrun it and that timestep gets an EMPTY BID (or idle actions), which is
-#   flagged in the COMPUTE section of the report. 0 disables it.
-#   The shipped example agent uses about 0.02 s per run in total, so 5 s is
-#   very roomy -- it is sized for a first call that also pays for lazy torch
-#   imports and building a model in reset().
-# run_budget_seconds: total wall-clock a single participant may spend across
-#   the WHOLE run. Exhausting it disqualifies that participant for the
-#   remainder: empty bids, idle actions, agent never called again. This is
-#   what bounds a submission that hangs, since an abandoned thread cannot be
-#   killed. 0 disables it.
-call_timeout_seconds: 5.0
-run_budget_seconds: 120.0
-
+reference: true
 out: results/default
 save_csv: true

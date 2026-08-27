@@ -194,10 +194,12 @@ class ExampleAgent(Agent):
             # is usually a bigger one than the actual battery. It is left
             # out of this example because doing it well needs a forecast and
             # some care about the comfort penalty. That part is your job.
-            if o.indoor_temperature > o.comfort_high - 0.5:
-                hvac = -1.0
-            else:
-                hvac = 0.0             # coast; never heat in a cooling season
+            # Proportional, not bang-bang. These heat pumps are strong
+            # enough to overshoot the comfort band badly if switched fully
+            # on and off, and every degree-hour outside it costs money.
+            target = o.comfort_high - 0.5
+            error = o.indoor_temperature - target
+            hvac = -float(min(1.0, error / 1.5)) if error > 0 else 0.0
 
             actions[name] = Action(
                 hvac=hvac,

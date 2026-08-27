@@ -36,9 +36,31 @@ python examples/explain_market.py                 # how the market works, in num
 python -m annex96p2p run --config config/smoke.yaml
 ```
 
-The whole thing is numpy, pandas and pyyaml. No CityLearn, no PyTorch, no
-dataset to download, and a full simulated week runs in about a tenth of a
-second. The smoke run finishes instantly and prints a leaderboard.
+That needs numpy, pandas and pyyaml and nothing else, and runs a simulated
+week in about a tenth of a second on a synthetic 12-building neighbourhood.
+
+**There are two building stocks, and the same agent code runs on both:**
+
+| config | stock | needs | speed |
+|---|---|---|---|
+| `smoke.yaml` | 12 synthetic buildings, 2 days | numpy | instant |
+| `mock.yaml` | 12 synthetic buildings, a week | numpy | ~0.1 s |
+| `ce1_scale.yaml` | 25 synthetic buildings, a week | numpy | ~0.3 s |
+| **`default.yaml`** | **the real 25 Annex 96 homes, 30 days** | CityLearn + PyTorch | ~2 min |
+
+Develop against the synthetic stock because the loop is fast, then confirm on
+`default.yaml`. The real stock needs a clone of the exercise repo:
+
+```bash
+git clone https://github.com/kkaspar10/annex96_common_exercise_1 ../annex96_common_exercise_1
+pip install torch
+python -m annex96p2p run --config config/default.yaml
+```
+
+The differences between the two stocks are real and documented in
+[docs/citylearn.md](docs/citylearn.md) -- the real homes all have both PV and a
+large heat pump, comfort is much harder to hold, and the comfort price is
+calibrated differently as a result. Mechanisms transfer; numbers do not.
 
 Then:
 
