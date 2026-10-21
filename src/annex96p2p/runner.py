@@ -325,7 +325,7 @@ def simulate(backend: Backend, participants: List[Participant], tariff: Tariff,
             )
 
         if recorder is not None:
-            recorder(dict(timestep=t, market=market_info, bids=bids,
+            recorder(dict(timestep=t, market=market_info, bids=bids, actions=actions,
                           clearing=clearing, observations=observations,
                           outcomes=outcomes))
 

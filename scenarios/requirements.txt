@@ -1,0 +1,16 @@
+# Tested classroom runtime: Python 3.10; pinned CityLearn code is cloned separately.
+# Deliberately excludes the upstream data-generation stack (OpenStudio/doe_xstock).
+numpy==1.26.4
+pandas==2.3.3
+PyYAML==6.0.3
+gymnasium==0.28.1
+NREL-PySAM==7.1.1.post1
+scikit-learn==1.2.2
+scipy==1.15.3
+simplejson==4.1.1
+requests==2.34.2
+platformdirs==4.11.0
+torch==2.13.0
+matplotlib==3.10.9
+plotly==6.9.0
+pytest==9.1.1

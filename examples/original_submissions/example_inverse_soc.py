@@ -83,8 +83,9 @@ class InverseSocAgent(Agent):
     #: Never quote below this -- the price grid is in whole cents, so a
     #: divider near zero would otherwise round away entirely.
     floor = 0.01
-    #: Where to sit in the comfort band: -1 is the bottom edge.
-    aim = -0.85
+    #: Where to sit in the comfort band: 0 is the centre, -1 the bottom
+    #: edge, +1 the top. Dispatch targets the middle.
+    aim = 0.0
 
     def reset(self) -> None:
         self.thermostat = Thermostat()
@@ -104,7 +105,7 @@ class InverseSocAgent(Agent):
         offer = max(self.floor, divider - self.deadband * grid)
 
         need = sum(o.passive_net_kwh
-                   + abs(self.thermostat(o, aim=self.aim)) * o.hp_max_electric_kw
+                   + o.hp_draw_kwh(self.thermostat(o, aim=self.aim))
                    for o in obs.values())
         available = min(power, soc)
         room = min(power, max(0.0, cap - soc))
@@ -137,7 +138,7 @@ class InverseSocAgent(Agent):
     def dispatch(self, obs: Dict[str, BuildingObs], mkt: MarketInfo,
                  result: TradeResult) -> Dict[str, Action]:
         hvac = {n: self.thermostat(o, aim=self.aim) for n, o in obs.items()}
-        need = sum(o.passive_net_kwh + abs(hvac[n]) * o.hp_max_electric_kw
+        need = sum(o.passive_net_kwh + o.hp_draw_kwh(hvac[n])
                    for n, o in obs.items())
 
         residual = need - result.quantity

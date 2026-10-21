@@ -1,0 +1,30 @@
+# Synthetic teaching equipment, not descriptions of the original ResStock homes.
+version: 1
+dataset: annex96_ce1_vt_neighborhood
+upstream_commit: 28ab31e88f9f4e1559bca7be3aaae8c918a20f83
+building_count: 20
+pv_house_count: 10
+evil_house_count: 6       # exactly 30% of the 20-house exercise
+round_trip_efficiency: 0.90
+initial_soc: 0.0
+comfort_price: 0.50
+configurations:
+  balanced:
+    pv_house_pv_kw: 40.0
+    pv_house_battery_kwh: 4.0
+    pv_house_c_rate: 0.25
+    storage_house_pv_kw: 1.0
+    storage_house_battery_kwh: 80.0
+    storage_house_c_rates: [0.25, 1.0]
+  solar_abundant:
+    pv_house_pv_kw: 60.0
+    pv_house_battery_kwh: 4.0
+    pv_house_c_rate: 0.25
+    storage_house_pv_kw: 1.0
+    storage_house_battery_kwh: 80.0
+    storage_house_c_rates: [0.25, 1.0]
+# Retail dollars/kWh, starting at midnight. Morning/evening peaks, midday lull.
+duck_prices: [0.14, 0.13, 0.12, 0.11, 0.12, 0.15, 0.24, 0.34,
+              0.30, 0.20, 0.12, 0.08, 0.06, 0.055, 0.07, 0.12,
+              0.22, 0.36, 0.45, 0.40, 0.29, 0.22, 0.18, 0.16]
+daily_price_variation: 0.10

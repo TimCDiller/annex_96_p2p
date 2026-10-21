@@ -63,7 +63,7 @@ def collect(days):
                               delivery_adder=cfg.delivery_adder,
                               volatility=cfg.price_volatility, seed=cfg.seed,
                               export_price=cfg.export_price)
-    participants, report = build_participants(backend, str(ROOT / "submissions"))
+    participants, report = build_participants(backend, str(ROOT / "examples/original_submissions"))
     print(report.render() or "(no submissions found)")
 
     rec = []
@@ -282,8 +282,13 @@ def write_booklet(path, rec, backend, tariff, result, rows, summary, step):
     import plotly.io as pio
 
     def div(fig, first=False):
+        # Drop the camera button: the booklet is meant to be readable when
+        # hosted somewhere sandboxed, and a page-initiated download is inert
+        # there -- a button that silently does nothing is worse than no button.
         return pio.to_html(fig, include_plotlyjs=("inline" if first else False),
-                           full_html=False, config={"displaylogo": False})
+                           full_html=False,
+                           config={"displaylogo": False,
+                                   "modeBarButtonsToRemove": ["toImage"]})
 
     cleared = sum(1 for r in rec if r["clearing"].price is not None)
     ratios = [r["clearing"].price / r["market"].grid_import_price
@@ -389,13 +394,28 @@ THIN = """
   rational; collectively it removes the demand the sellers needed.
  </p>
  <p class="note">
-  <b>3. And yet __CURT__ kWh was curtailed</b> &mdash; surplus that found no buyer
-  and earned nothing. So there is unmet trade even here. Three things would go
-  after it, all student-sized: bid for market energy even when the battery could
-  cover it, since energy at 40% of the grid price beats spending charge worth
-  more later; hold charge back for the expensive hours instead of spending it on
-  the first import; and vary where in the comfort band you sit, because agents
-  that all hug the same edge all want the same thing at the same moment.
+  <b>3. And yet __CURT__ kWh was curtailed.</b> It is worth being exact about
+  what that is, because the obvious reading is wrong. It is <i>not</i> surplus
+  generation that failed to find a buyer. Measured over this run, none of the
+  curtailed energy was ever offered to the market &mdash; and in the hours it
+  happened there were hundreds of kWh of unfilled <i>buy</i> orders sitting
+  there, so anything offered would have sold instantly.
+ </p>
+ <p class="note">
+  It is over-buying. An agent bids for the energy it forecasts it will consume,
+  then consumes less than that, and settlement pays nothing back for the
+  difference: <code>residual = physical net &minus; cleared position</code>, and
+  a negative residual is curtailed, not refunded. So curtailment here measures
+  how badly a participant forecast its <i>own</i> demand, not how badly the
+  market matched supply to it. The single biggest source of it was agents
+  bidding against heat pump commands the physics discards &mdash; see
+  <code>BuildingObs.hp_draw_kwh()</code>, which exists because of this.
+ </p>
+ <p class="note">
+  Two things would go after the rest, both student-sized: bid for market energy
+  even when the battery could cover it, since energy at 40% of the grid price
+  beats spending charge worth more later; and hold charge back for the expensive
+  hours instead of spending it on the first import of the day.
  </p>
 </div>
 """

@@ -1,0 +1,251 @@
+ALTERED BUILDING STOCK: INSTALLATION AND CLASSROOM USE
+
+This is the course default. The README covers what students need; this guide
+has the full construction detail and the instructor experiments.
+
+What this package is
+--------------------
+This is a synthetic equipment variant of the original stock and the course
+default market. It leaves the original exercise (docs/original_exercise.md)
+and its agents in examples/original_submissions/ untouched. The recipe is altered_stock.yaml;
+the implementation is annex96p2p.stock_dataset, stock_agents, and altered_stock.
+The data builder creates generated/altered_stock/ locally. That directory is
+ignored by Git; students generate it from a pinned upstream GitHub checkout.
+
+The experiment retains the first 20 included homes in the upstream Vermont
+schema, in schema order, and excludes the other five. Alternating homes are
+assigned to PV and storage roles. There are ten of each, and six houses are
+exactly 30% of the stock. The role assignment is deterministic, not a claim
+that these are the actual equipment installations in those homes.
+
+Equipment changes
+-----------------
+Configuration      PV-rich home (10 homes)       Storage-rich home (10 homes)
+balanced           40 kW PV; 4 kWh / 1 kW        1 kW PV; 80 kWh battery
+solar_abundant     60 kW PV; 4 kWh / 1 kW        1 kW PV; 80 kWh battery
+
+Five large batteries are rated at 80 kW (1C); five at 20 kW (0.25C).
+C-rate = rated power in kW / capacity in kWh. Ideal full-energy durations
+are one hour and four hours, before losses, reserve limits and charging headroom.
+All batteries start empty; AC-to-AC round-trip efficiency is 90%. The physics
+applies sqrt(0.90) on each leg. Self-discharge and degradation are disabled,
+and the power/SOC and power/efficiency curves are constant, so hidden tapering
+does not undermine the C-rate exercise. Controllers use conservative SOC limits.
+These are explicit teaching simplifications, not manufacturer battery models.
+
+Both configurations have 840 kWh of storage in total, with 510 kW of aggregate
+battery power. Aggregate PV is 410 kW and 610 kW respectively. These are large
+community-scale assets assigned to household participants; roof areas, service
+connection limits and feeder power flows are not enforced. Do not interpret
+this as a physically buildable residential installation design.
+
+Weather, original demand profiles, occupant setpoints, heat-pump equipment,
+and pretrained LSTM thermal models are preserved. PV orientations and normalized
+weather-dependent production profiles come from the upstream model. Only PV
+nameplate capacity and electrical battery parameters are changed. In particular,
+the builder does NOT scale heating loads or retrain a thermal model.
+
+The source CSVs contain zero PV until CityLearn's autosizing step creates a
+profile. The builder first obtains that W/kW profile, writes it into local CSVs,
+and disables PV autosizing in the new schemas. Merely editing nominal_power in
+the original raw schema with autosizing disabled would produce no generation.
+
+Each generated folder contains schema.json, buildings.csv (before/after
+equipment and roles), energy CSVs, weather, thermal-model files, duck_prices.csv,
+an upstream license copy, and provenance.json. The provenance records the
+upstream commit, original-file SHA256 hashes, recipe and generated-file hashes.
+All schema resource paths are relative. Copying the whole folder preserves it;
+editing a generated file causes the run command's integrity check to fail.
+Change the recipe and rebuild instead.
+
+Installing from GitHub
+----------------------
+These commands apply after the scenario code is committed/published in the
+course repository. Nothing in the local experiment automatically pushes code
+or creates a GitHub release.
+
+Use Python 3.10, Git, and a fresh virtual environment. CPU execution is enough.
+
+    git clone -b release/course-v1 https://github.com/TimCDiller/annex_96_p2p.git
+    cd annex_96_p2p
+    python -m venv .venv
+
+Activate it with .venv\Scripts\Activate.ps1 on PowerShell, or
+source .venv/bin/activate on Linux/macOS. Then:
+
+    python -m pip install -r scenarios/requirements.txt
+    python -m pip install -e .
+    git clone -c core.longpaths=true https://github.com/kkaspar10/annex96_common_exercise_1 ../annex96_common_exercise_1
+    git -C ../annex96_common_exercise_1 checkout 28ab31e88f9f4e1559bca7be3aaae8c918a20f83
+    python -m annex96p2p.altered_stock build
+    python -m pytest tests/test_altered_stock.py -q
+    python -m annex96p2p.altered_stock run --configurations balanced --modes competitive --days 7
+
+Run commands from the repository root. --upstream accepts a different checkout
+location; --dataset accepts a different generated dataset directory. The runtime
+imports the fork from that checkout; do not substitute a generic PyPI CityLearn
+release. The pinned classroom requirements omit the unrelated upstream
+OpenStudio/doe_xstock data-generation stack. Initial installation still downloads
+PyTorch, so allow time and disk space for that dependency.
+
+To run both configurations and every ownership/strategy case over the full month:
+
+    python -m annex96p2p.altered_stock run
+
+To create the interactive comparison report after the run:
+
+    python examples/altered_stock_report.py
+
+The supplied manual GitHub Actions workflow builds from the pinned checkout,
+checks physical C-rates and portability, and runs a short classroom smoke test.
+It is a prepared workflow; local tests do not imply it has already run on GitHub.
+
+Student submissions
+-------------------
+Students test in submissions/. Copy submissions/_template.py (or the fuller
+submissions/_example_half_battery.py) to submissions/team_alpha.py and set NAME
+and BUILDINGS to the instructor's assignment, which is posted on Canvas. Read
+generated/altered_stock/balanced/buildings.csv for actual IDs, roles,
+capacities and power ratings. Files starting with "_" are not loaded. Then run:
+
+    python -m annex96p2p.altered_stock run --configurations balanced --modes competitive --days 7 --submissions submissions --out results/my_team
+
+Hand-ins happen on Canvas, not through this repository.
+
+All remaining houses use the provided StorageServiceAgent. The student's bid()
+and dispatch() receive the same ordinary observation API as the original course.
+Power/capacity and comfort bands are visible; future weather, other portfolios,
+and future actual loads are not passed to the controller. There is no central
+storage allocation API: storage service means buying energy now and selling it
+later through the ordinary peer-to-peer market, with no bilateral storage contract.
+
+The baseline controller targets the middle of the comfort band, buys solar for
+storage, keeps an overnight morning reserve, and sells during both price peaks.
+Its forecast is deliberately simple and imperfect. CityLearn's observations
+precede the physical transition by one hour, so using observed PV unchanged as
+next-hour PV can create grid-backed sales. Inspect the settlement and physical
+audit before claiming a strategy supplies energy efficiently.
+
+Optional RC thermal model and preheating
+----------------------------------------
+The RC exercise fits a separate one-zone model for each building. Run:
+
+    python examples/calibrate_rc.py
+    python examples/calibrate_rc.py --dataset generated/altered_stock/solar_abundant --out scenarios/rc_models/solar_abundant.json
+    python -m annex96p2p.altered_stock run --configurations balanced solar_abundant --modes competitive rc_preheat --out results/rc_comparison
+    python examples/rc_preheat_report.py --baseline-runs results/rc_comparison --rc-runs results/rc_comparison
+    python examples/rc_diagnostics.py --baseline-runs results/rc_comparison --rc-runs results/rc_comparison
+
+The calibration applies a fixed eight-hour sequence of bounded heat-pump
+perturbations around the standard thermostat. The same schedule is published in
+annex96p2p.rc_thermal.EXCITATION and is shifted by building index. A fit uses
+hours 13-119; hours 120-167 are held out for one-step temperature validation.
+The first 13 hours are excluded from fitting because of the LSTM warmup. The
+model is a deliberately simple heat balance: next-hour indoor temperature is
+current temperature plus outdoor exchange, heat-pump thermal input, solar and
+internal gains, a daily occupancy term, and an intercept. Its coefficients and
+per-home validation errors are saved in scenarios/rc_models/*.json, tied to a
+canonical SHA256 of the generated schema's JSON content. This check ignores
+formatting and platform line endings. Regenerate the models if the scenario changes.
+
+RCPreheatAgent uses only its own current observation, its fitted coefficients,
+its own past prediction errors, and the published 24-hour grid-price shape. It
+estimates the day multiplier from the current public price. It does not receive
+future weather, setpoints, loads, other homes' observations, or future bids.
+After the seven-day calibration window, it raises its thermal target before a
+peak when predicted heat retention makes this cheaper. Where the model predicts
+headroom below the upper comfort edge, it requests up to 0.08 extra heat-pump
+command during that pre-peak hour. It lowers the target within the comfort band
+at the peak. A fitted model with validation error above
+1.5 C falls back to the ordinary thermostat. The RC output is blended with the
+thermostat and limited to a 0.10 change in hourly heat-pump command.
+
+This is an RC surrogate for the upstream LSTM simulator, not a claim that the
+houses have literal one-zone physics. The fixed calibration uses the first
+seven days of the same weather series, so compare controllers from day 8 onward
+as well as over the whole run. The run writes thermal_plan.csv, hourly building
+HVAC kWh, and both full-month and evaluation-window comfort metrics. The
+published model files let students reproduce the results without running an
+unseen private fit. Their own controllers may fit or improve the model too.
+
+The diagnostics command writes temperatures_balanced.html and
+temperatures_solar_abundant.html, each with a dropdown for all 20 houses,
+indoor temperature, the actual comfort band, heating input, trades, clearing
+price and the grid ceiling. The dotted prediction line and per-house
+rc_prediction_mae_c show how the fitted model performs under its own control;
+fallback houses have no prediction. It also writes temperature_example.png,
+trading_impact.png, house_effects.csv and trading_comparison.csv. The plotted
+post-transition temperature uses the NEXT source-row setpoint; the script
+checks its reconstructed comfort exceedance against the recorded outcome.
+Compare trading from day 8 onward, after identification. More comfort or
+less peak heating need not mean more peer-to-peer energy: preheating can use
+grid power or a building's own PV. Inspect physical backing and agent bills.
+For a causal check of the advance-warming step, run mode rc_no_preheat with
+the same fitted models and pass its output as --ablation-runs to
+rc_diagnostics.py. That comparison keeps the RC model and peak-hour guard but
+turns off the extra pre-peak heat request.
+
+    python -m annex96p2p.altered_stock run --configurations balanced solar_abundant --modes rc_no_preheat --out results/rc_ablation
+    python examples/rc_diagnostics.py --baseline-runs results/rc_comparison --rc-runs results/rc_comparison --ablation-runs results/rc_ablation
+
+Thirty-percent owner and EvilAgent
+---------------------------------
+Modes:
+  competitive       20 independent honest household controllers
+  pv_honest         first six PV homes grouped under one honest owner
+  pv_withhold       same owner offers 40% of planned supply at 90% of grid price;
+                    it also shades midday buying if it becomes a buyer
+  storage_honest    first six storage homes grouped under one honest owner
+  storage_withhold  same withholding policy; midday buy quantity is reduced to
+                    60% and willingness to pay to 45% of grid price
+  storage_flood     same storage owner releases available battery power at peaks,
+                    offering surplus at one cent instead of pacing discharge
+
+The storage owner includes three fast and three slow batteries. Each large owner
+controls 30% of homes but 60% of its specialized cohort's equipment, giving a
+meaningful source of market power. Its ownership is deliberately concentrated.
+Withholding means not offering energy; unsold PV may be curtailed by settlement.
+Flooding is limited by actual battery power and SOC. There is no fabricated
+generation, hidden bid-book access, monkey-patching, or trading with itself.
+
+These strategies ATTEMPT to affect prices. They are not guaranteed to profit.
+Read strategic_effects.csv: owner_benefit is the reduction in its bill relative
+to the HONEST OWNER OF THE SAME SIX HOUSES. Positive is profitable. Comparing
+only against the 20-independent-house case would mix manipulation with internal
+netting/aggregation. effects on other participants and the total system are
+reported separately. Changing the clearing price can change which hours trade,
+so the volume-weighted mean price is not a fixed-hour causal price estimate.
+
+Duck-shaped retail prices
+-------------------------
+The recipe specifies all 24 hourly prices, in dollars/kWh, starting at midnight.
+The morning peak is $0.34 at 07:00, evening peak $0.45 at 18:00, and midday
+minimum $0.055 at 13:00. A deterministic +/-10% weekly multiplier varies days.
+This is a synthetic retail-price teaching curve, not observed wholesale data.
+The grid remains the price ceiling, and export to the grid earns zero.
+
+How to interpret and grade
+--------------------------
+Report net settled sales once, physical surplus backing, battery charge and
+discharge, curtailment, total bills, and comfort. Gross turnover alone rewards
+misforecast sellers who cover deliveries through the grid. The first 13 thermal
+steps are model warmup; reported full-month results include them. The final day
+contains 23 transitions. Bills have no terminal battery credit and no battery
+wear cost; final SOC is saved so that this limitation can be inspected.
+
+The two C-rate cohorts contain different houses. Their observed performance is
+not by itself a causal estimate of C-rate; use matched role/rate swaps for that.
+Give students comparable numbers of houses, or score everyone across common
+assigned portfolios with fixed opponents. Also grade comfort and explanation.
+Do not infer opponent-independent scores from a baseline-cost ratio.
+
+GitHub distribution checklist
+-----------------------------
+Commit recipe, source, requirements, tests, submissions/_template.py, guide, and workflow.
+Include the published RC model JSON files if using the preheating exercise.
+Keep generated data and result CSVs out of ordinary Git history. Students obtain
+the original data from its pinned upstream source and regenerate locally.
+Use a course release tag for the code and keep the upstream commit fixed.
+If an instructor later distributes a generated archive, include provenance and
+the upstream notices, and check the upstream dataset distribution terms first.
+The pipeline does not upload datasets or publish any external artifacts.

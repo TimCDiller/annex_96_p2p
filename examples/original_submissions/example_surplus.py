@@ -55,8 +55,9 @@ class SurplusAgent(Agent):
     #: Bounds for calling the battery full or empty.
     full_at = 0.95
     empty_at = 0.05
-    #: Where to sit in the comfort band: -1 is the bottom edge.
-    aim = -0.85
+    #: Where to sit in the comfort band: 0 is the centre, -1 the bottom
+    #: edge, +1 the top. Dispatch targets the middle.
+    aim = 0.0
 
     def reset(self) -> None:
         self.thermostat = Thermostat()
@@ -74,7 +75,7 @@ class SurplusAgent(Agent):
         room = min(power, max(0.0, cap - soc))
 
         need = sum(o.passive_net_kwh
-                   + abs(self.thermostat(o, aim=self.aim)) * o.hp_max_electric_kw
+                   + o.hp_draw_kwh(self.thermostat(o, aim=self.aim))
                    for o in obs.values())
 
         # Rule 1: self-consumption is implicit. `need` is already net of our
@@ -112,7 +113,7 @@ class SurplusAgent(Agent):
     def dispatch(self, obs: Dict[str, BuildingObs], mkt: MarketInfo,
                  result: TradeResult) -> Dict[str, Action]:
         hvac = {n: self.thermostat(o, aim=self.aim) for n, o in obs.items()}
-        need = sum(o.passive_net_kwh + abs(hvac[n]) * o.hp_max_electric_kw
+        need = sum(o.passive_net_kwh + o.hp_draw_kwh(hvac[n])
                    for n, o in obs.items())
 
         residual = need - result.quantity

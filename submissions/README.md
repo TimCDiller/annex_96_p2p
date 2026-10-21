@@ -1,33 +1,40 @@
-# Submissions
+# Submissions — test your agent here
 
-Put your agent here as a single `.py` file.
+This folder is where you **test** your agent on your own machine. It is not
+how you hand in: **hand-ins happen on Canvas**.
 
 ```bash
-cp example_team.py team_yourname.py
-python -m annex96p2p check submissions/team_yourname.py
-python -m annex96p2p run --config ../config/default.yaml
+cp submissions/_template.py submissions/team_yourname.py      # or _example_half_battery.py
+# set NAME and BUILDINGS to your Canvas assignment, then edit the agent
+python -m annex96p2p.altered_stock run --configurations balanced --modes competitive \
+    --days 7 --submissions submissions --out results/team_yourname
 ```
 
-**The rules, the full API, the debugging guide and the pre-submission
-checklist all live in [the main README](../README.md).** They are deliberately
-not repeated here, so there is one copy that cannot drift out of date. Read
-these sections before you start:
+Run from the repository root, after the one-time setup in
+[Getting set up](../README.md#getting-set-up).
 
-- [Submission rules](../README.md#submission-rules) — what a submission may
-  and may not do
-- [How the market works](../README.md#how-the-market-works) — the price
-  bounds, the bid→clear→dispatch order, why there is no imbalance penalty
-- [The API in full](../README.md#the-api-in-full) — every field of
-  `BuildingObs`, `MarketInfo`, `TradeResult` and `Action`
-- [Debugging your agent](../README.md#debugging-your-agent) — reading
-  `settlements.csv` when something looks wrong
-- [The default agent, and how to beat it](../README.md#the-default-agent-and-how-to-beat-it)
-  — its weaknesses are the assignment
+| file | what it is |
+|---|---|
+| `_template.py` | inherits the default agent unchanged — the smallest legal submission |
+| `_example_half_battery.py` | a complete simple agent: battery held at 50%, surplus sold from 20% of the grid price, shortfall bought up to 80% |
 
-The one thing worth repeating: anything nobody claims is run by the built-in
-default agent, one participant per building. That is why you can develop
-alone — your market is full of counterparties even when yours is the only
+Files starting with `_` are not loaded, so neither of these takes part in
+your runs, and `_scratch.py` is a safe place to experiment. Keep only one
+loaded copy of your own agent here: two files claiming the same buildings
+stop the run.
+
+Every house nobody claims is run by the default agent, one participant per
+house, so your market is full of counterparties even when yours is the only
 file in this folder.
 
-Files starting with `_` are ignored, so `_scratch.py` is a safe place to
-experiment.
+**The rules, the full API, the debugging guide and the hand-in checklist live
+in [the main README](../README.md)** — one copy, so it cannot drift:
+
+- [Testing your agent](../README.md#testing-your-agent) and
+  [Is it any good?](../README.md#is-it-any-good)
+- [Handing in](../README.md#handing-in)
+- [Submission rules](../README.md#submission-rules)
+- [How the market works](../README.md#how-the-market-works)
+- [The API in full](../README.md#the-api-in-full)
+- [Debugging your agent](../README.md#debugging-your-agent)
+- [Before you hand in](../README.md#before-you-hand-in)

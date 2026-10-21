@@ -190,4 +190,4 @@ enforce anything, and your only real job is to make your bid and your
 dispatch agree with each other.
 
 Next:  python -m annex96p2p run --config config/default.yaml
-       then open submissions/example_team.py""")
+       then open examples/original_submissions/example_team.py""")

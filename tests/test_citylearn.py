@@ -194,7 +194,7 @@ def _score_one(backend, tariff, module, cls_name):
 
     from annex96p2p.reference import reference_costs
 
-    sys.path.insert(0, str(ROOT / "submissions"))
+    sys.path.insert(0, str(ROOT / "examples/original_submissions"))
     mod = importlib.import_module(module)
     agent_cls = getattr(mod, cls_name)
     # Each example on the buildings it actually declares, which is what a real
@@ -248,7 +248,7 @@ def test_submissions_folder_loads_cleanly(backend):
     Building names here are ResStock ids, so a submission written against
     anything else silently controls nothing. Pin it.
     """
-    participants, report = build_participants(backend, str(ROOT / "submissions"))
+    participants, report = build_participants(backend, str(ROOT / "examples/original_submissions"))
     assert not report.unknown_buildings, report.render()
     assert not report.skipped, report.render()
     assert not report.conflicts, report.render()

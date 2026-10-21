@@ -13,7 +13,7 @@ COPY examples ./examples
 
 # Submissions are mounted read-only at run time, not baked in:
 #   docker run --rm --network none --memory 2g --cpus 2 \
-#     -v "$PWD/submissions:/app/submissions:ro" annex96 \
+#     -v "$PWD/examples/original_submissions:/app/examples/original_submissions:ro" annex96 \
 #     python -m annex96p2p tournament --config config/default.yaml
 RUN mkdir -p submissions && useradd -m runner && chown -R runner /app
 USER runner

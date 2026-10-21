@@ -1,41 +1,68 @@
 """Adapter for the real Annex 96 Common Exercise 1 neighbourhood.
 
-Verified against the upstream dataset (Texas, 25 buildings, 720 timesteps).
+Verified against both upstream datasets: Vermont (heating, 743 steps) and
+Texas (cooling, 719 steps), 25 buildings each.
 The facts it is built on, all read off a live environment rather than assumed:
 
-  buildings                25
-  time_steps               720  (30 days, starting June -- month == 6)
+  buildings                25 in each dataset
+  time_steps               744 (Vermont, January) / 720 (Texas, June)
   observation_names[0]     29 names, including comfort_band and
                            electrical_storage_soc
-  action_names[0]          ['electrical_storage', 'cooling_device']
-                           -- the heating device exists but is NOT actuated
-  action_space[0]          low  [-0.1667, 0.0]
-                           high [+0.1667, 1.0]
+  action_names[0]          ['electrical_storage', 'heating_device']  Vermont
+                           ['electrical_storage', 'cooling_device']  Texas
+  action_space[0]          battery bounded by nominal_power/capacity,
+                           hvac one-sided [0, 1]
   reset()                  returns (obs, info)
   step()                   returns a 5-tuple, ~0.15 s per call
 
-Three of those matter enough to spell out, because getting them wrong gives
+These matter enough to spell out, because getting them wrong gives
 plausible-looking nonsense rather than an error:
 
 1. THE ACTION SPACE IS NOT [-1, 1]. The battery action is a fraction of
-   CAPACITY per timestep, bounded by the power rating: 2.5 kW over 15 kWh is
-   0.1667. Our own Action.battery is a fraction of RATED POWER, so the two
-   differ by `nominal_power / capacity` and have to be converted. The cooling
+   CAPACITY per timestep, bounded by the power rating: 2.88 kW over 37.8 kWh
+   is 0.0762. Our own Action.battery is a fraction of RATED POWER, so the two
+   differ by `nominal_power / capacity` and have to be converted. The hvac
    action is one-sided, [0, 1].
 
-2. `cooling_device.efficiency` IS NOT A COP. It is 0.253 on building 0, a
-   fraction-of-Carnot figure. The actual COP comes from `get_cop()` and is
-   about 4.25. Reporting `efficiency` as the COP is wrong by a factor of 17.
+2. ONLY ONE HVAC DEVICE IS ACTUATED, and which one depends on the dataset.
+   The other exists but is vestigial -- 0.09 kW of cooling on a Vermont house
+   against 19.5 kW of heating -- so reading the wrong one understates the load
+   by two orders of magnitude. Take it from the action list, never by assuming.
+   The consequence reaches all the way out to the agents: the infeasible half
+   of an `hvac` command is silently discarded by the physics, so bidding
+   against it buys energy that is then curtailed. Hence
+   `BuildingObs.hp_is_heating` and `hp_draw_kwh()`.
 
-3. COMFORT IS NOT FIXED. `comfort_band` is an observation (2.0 K here) around
-   a per-building, per-timestep cooling setpoint. Do not hardcode 22-26.
+3. `efficiency` IS NOT A COP. It is 0.253 on Texas building 0, a
+   fraction-of-Carnot figure. The actual COP comes from `get_cop()`. Reporting
+   `efficiency` as the COP is wrong by a factor of 17. The COP is also strongly
+   weather-dependent: heating at -21 degC gives 1.10, which is physically
+   correct and not a bug.
 
-4. THE FIRST 13 TIMESTEPS ARE A WARMUP. The buildings are
+4. COMFORT IS NOT FIXED. `comfort_band` is an observation (2.0 K here) around
+   a per-building, per-timestep setpoint, and the setpoint MOVES -- by up to
+   7 K within a single building. Do not hardcode a band.
+
+5. THE FIRST 13 TIMESTEPS ARE A WARMUP. The buildings are
    LSTMDynamicsBuilding with `lookback = 13`, so the indoor temperature is
-   pinned at its initial value until the model has that much history --
-   the cooling action provably does nothing before then. Comfort penalties
-   in that window are unavoidable and mean nothing. Fine over 720 steps,
-   but do not draw conclusions from a two-day run.
+   pinned at its initial value until the model has that much history -- the
+   hvac action provably does nothing before then. Comfort penalties in that
+   window are unavoidable and mean nothing. Fine over a full month, but do not
+   draw conclusions from a two-day run.
+
+6. `env.time_steps` IS ONE MORE THAN THE NUMBER OF LEGAL STEPS. See the note
+   on `horizon` below; asking for the full count raises IndexError on the very
+   last step, which is a nasty way to lose a long run.
+
+7. THE OBSERVATION DESCRIBES THE STEP BEING LEFT, NOT THE ONE BEING TAKEN.
+   CityLearn applies an action to the transition INTO time_step + 1 and bills
+   it against that index, so `non_shiftable_load` and `solar_generation` as
+   observed are one hour stale. Verified: with heat pump and battery idle, the
+   net for step t equals the OBSERVED passive net of step t + 1, exactly.
+   This is CityLearn's own convention and is NOT corrected here -- agents are
+   bidding on a step whose load and PV they cannot see, which on a sunrise
+   ramp reached 8.4 kWh in a single building-hour and is the largest single
+   cause of curtailment in a run. Treat it as a forecasting problem.
 
 Two further notes on the dataset itself:
 
@@ -66,9 +93,8 @@ so the usual route is to clone that and point this at it:
 
 then in your config:
 
-    backend: citylearn
     citylearn_root: ../annex96_common_exercise_1
-    citylearn_schema: ../annex96_common_exercise_1/data/datasets/annex96_ce1_tx_neighborhood/schema.json
+    citylearn_schema: ../annex96_common_exercise_1/data/datasets/annex96_ce1_vt_neighborhood/schema.json
 
 `citylearn_root` is put on sys.path, so you do not have to pip install the
 fork. You do need its dependencies, PyTorch among them, because the CE1
@@ -77,7 +103,7 @@ buildings carry LSTM dynamics models:
     pip install torch
 
 Building the environment takes about 30 s and each timestep about 0.15 s, so
-a 720-step run is roughly two minutes, doubled while `reference: true`. Set
+a full run is roughly two minutes, doubled while `reference: true`. Set
 `days:` in the config to something small while you iterate.
 """.strip()
 
@@ -91,7 +117,7 @@ def _first(mapping: dict, *keys, default=0.0):
 
 
 class CityLearnBackend(Backend):
-    """Wraps a CityLearnEnv so it looks like the mock backend to an Agent."""
+    """Wraps a CityLearnEnv in the `Backend` interface an Agent sees."""
 
     hours_per_step = 1.0
 
@@ -107,15 +133,15 @@ class CityLearnBackend(Backend):
         except Exception as exc:                                 # noqa: BLE001
             raise SystemExit(INSTALL_HINT + "\n\n(import error: %s)" % exc)
 
-        target = schema or dataset
+        target = str(Path(schema).resolve()) if schema else dataset
         if schema and not Path(schema).exists():
             raise SystemExit(INSTALL_HINT + "\n\n(schema not found: %s)" % schema)
 
-        # CityLearn resolves dataset-relative paths against the working
-        # directory, so run from the schema's own tree.
+        # Generated classroom schemas need not sit three levels below an
+        # upstream checkout. Resolve the schema before changing directory.
         self._cwd = os.getcwd()
         if schema:
-            os.chdir(Path(schema).resolve().parents[3])
+            os.chdir(Path(root).resolve() if root else Path(target).parent)
         try:
             self.env = CityLearnEnv(target, central_agent=False)
         finally:
@@ -125,7 +151,12 @@ class CityLearnBackend(Backend):
         self._obs_names = self.env.observation_names
         self._act_names = self.env.action_names
 
-        horizon = int(getattr(self.env, "time_steps", 0) or 720)
+        # `env.time_steps` counts OBSERVATIONS, 0..time_steps-1, and each step()
+        # reads the index it is moving to. So the last legal step lands on
+        # time_steps-1 and there are only time_steps-1 of them; asking for the
+        # full count walks off the end of every per-timestep array with
+        # "IndexError: index 744 is out of bounds for axis 0 with size 744".
+        horizon = max(1, int(getattr(self.env, "time_steps", 0) or 720) - 1)
         self.n_timesteps = min(horizon, int(days) * 24) if days else horizon
 
         # WHICH HVAC DEVICE IS ACTUALLY ACTUATED. Texas exposes
@@ -225,6 +256,7 @@ class CityLearnBackend(Backend):
                 battery_max_power_kw=power,
                 hp_max_electric_kw=float(getattr(cd, "nominal_power", 0.0) or 0.0),
                 hp_cop=cop,
+                hp_is_heating=heating,
                 last_net_kwh=self._last_net[name],
             )
         return result
@@ -268,7 +300,9 @@ class CityLearnBackend(Backend):
             st = getattr(b, "electrical_storage", None)
             soc = 0.0
             if st is not None and getattr(st, "soc", None) is not None:
-                soc = float(st.soc[-1])
+                # CityLearn preallocates the full episode array: [-1] is the
+                # unfilled final slot until the last hour, not current SOC.
+                soc = float(st.soc[b.time_step])
                 cap = float(getattr(st, "capacity", 0.0) or 0.0)
                 if cap and soc <= 1.0001:      # stored as a fraction
                     soc *= cap
@@ -289,7 +323,8 @@ class CityLearnBackend(Backend):
         for i, name in enumerate(self.building_names):
             b = self.env.buildings[i]
             st = getattr(b, "electrical_storage", None)
-            cd = getattr(b, "cooling_device", None)
+            cd = getattr(b, "heating_device" if self._hvac_kind[i] == "heating"
+                         else "cooling_device", None)
             pv = getattr(b, "pv", None)
             out[name] = dict(
                 battery_kwh=round(float(getattr(st, "capacity", 0.0) or 0.0), 2),

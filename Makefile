@@ -1,11 +1,26 @@
-.PHONY: install test explain buildings run tournament booklet scan docker-tournament clean
+.PHONY: install test course-build course-run class-run explain buildings run tournament booklet scan docker-tournament clean
 
 install:
-	python -m pip install -e ".[dev]"
+	python -m pip install -r scenarios/requirements.txt
+	python -m pip install -e .
 
-# Fast suite: contracts only, no CityLearn needed.
+# Contracts plus the course market; skips what is not installed.
 test:
 	python -m pytest -q
+
+# --- the course market: the altered Vermont winter stock -------------------
+course-build:
+	python -m annex96p2p.altered_stock build
+
+# Your file(s) in submissions/, one week, the graded configuration.
+course-run:
+	python -m annex96p2p.altered_stock run --configurations balanced --modes competitive --days 7 --submissions submissions --out results/course
+
+# Everyone's Canvas files in submissions/, full month. Scan first.
+class-run: scan
+	python -m annex96p2p.altered_stock run --configurations balanced --modes competitive --submissions submissions --out results/class
+
+# --- the original 25-home exercise (docs/original_exercise.md) --------------
 
 # The market mechanism walked through in real numbers. No dataset needed.
 explain:
@@ -30,7 +45,7 @@ scan:
 docker-tournament:
 	docker build -t annex96 .
 	docker run --rm --network none --memory 4g --cpus 2 \
-	  -v "$$PWD/submissions:/app/submissions:ro" annex96 \
+	  -v "$$PWD/examples/original_submissions:/app/examples/original_submissions:ro" annex96 \
 	  python -m annex96p2p tournament --config config/default.yaml
 
 clean:

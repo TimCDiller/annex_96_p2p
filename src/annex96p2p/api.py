@@ -57,7 +57,35 @@ class BuildingObs:
     hp_max_electric_kw: float       # heat pump electrical draw at full output
     hp_cop: float
 
-    last_net_kwh: float             # your net energy in the PREVIOUS timestep
+    #: True if this building's heat pump is plumbed for HEATING, False for
+    #: cooling. Each building actuates exactly ONE device, so only half of the
+    #: `hvac` range does anything: on a heating building a negative command is
+    #: discarded by the physics, on a cooling building a positive one is. Use
+    #: `hp_draw_kwh()` rather than reading this directly.
+    hp_is_heating: bool = True
+
+    last_net_kwh: float = 0.0       # your net energy in the PREVIOUS timestep
+
+    def hp_draw_kwh(self, hvac: float) -> float:
+        """Electricity the heat pump will ACTUALLY draw for this command.
+
+        Use this to work out what you are about to consume. The obvious
+        expression is wrong:
+
+            abs(hvac) * o.hp_max_electric_kw          # WRONG
+
+        Every building actuates one device, never both, so the infeasible half
+        of the command is silently dropped. Asking a heating-only heat pump to
+        cool is simply "off" -- it costs nothing and does nothing. Bidding as
+        though it drew full power means buying energy you never consume, and
+        the surplus is curtailed rather than refunded.
+
+        Measured on the Vermont neighbourhood, 62% of the thermostat's commands
+        are the infeasible sign, so the wrong expression over-predicted demand
+        by 20,020 kWh across five days.
+        """
+        usable = max(0.0, hvac) if self.hp_is_heating else max(0.0, -hvac)
+        return usable * self.hp_max_electric_kw
 
     @property
     def has_battery(self) -> bool:
@@ -242,29 +270,45 @@ class Agent(ABC):
 
 
 class Thermostat:
-    """A competent cooling thermostat. Use it, or beat it.
+    """A competent thermostat. Use it, or beat it.
 
-    Thermal control on the real CE1 homes is harder than it looks, for two
+    Thermal control on the real CE1 homes is harder than it looks, for three
     reasons that only show up on that dataset:
 
-      * the heat pumps are around 3.5 kW electric at a COP over 4 -- some
-        15 kW of cooling on a single house -- and the LSTM dynamics respond to
-        hourly switching with swings of 6-9 K. Anything that slams the
-        compressor on and off overshoots the band in both directions.
+      * the heat pumps are enormous relative to an hourly timestep. On the
+        Vermont stock they draw up to 19.5 kW ELECTRIC, and one hour at full
+        power moves the indoor temperature about 15 K. Anything that slams the
+        compressor on and off overshoots the band in both directions -- an
+        earlier version of this class did exactly that, oscillating a building
+        between 14 and 30 degC in consecutive hours.
+      * the heating load is large and steady, and that breaks proportional
+        control specifically. A P controller can only produce output in
+        proportion to error, so against a constant load it settles with a
+        permanent offset -- it sits BELOW target forever, and cranking the gain
+        up does not fix it. That is why this is a PI controller.
       * the comfort band MOVES. It is the occupant setpoint plus or minus
         `comfort_band`, and the ResStock schedules jump it by up to 7 K within
         a single building, sometimes 6 K in three hours. Some exceedance right
         after a step is simply unavoidable.
 
-    Measured over 168 hours on all 25 buildings, counting only the hours when
-    the band was stable, so that structural error is excluded:
+    Measured on the Vermont neighbourhood, all 25 buildings, aiming at the
+    centre of the band and skipping the first 48 h so that startup is excluded:
 
-        plain proportional at the band top      694 degC-h   23.9% of hours out
-        this, smoothed and aimed above centre    29 degC-h    4.1% of hours out
+        proportional only, band 1.6 K       33.3% of hours in band
+        proportional only, band widened      3.5% of hours in band
+        this, proportional + integral       77.3% of hours in band
 
-    a 24-fold reduction in the part attributable to control. It buys that with
-    about 67% more cooling energy, which is why `comfort_price` has to sit
-    above roughly $0.18/degC-h for good control to pay for itself.
+    Note the middle row: widening the proportional band cuts the worst
+    excursion from 35 K to 10 K and still makes in-band WORSE, because it
+    trades oscillation for a bigger steady offset. Integral action is what
+    fixes this loop, not gain tuning.
+
+    ONE-DIRECTIONAL HEAT PUMPS
+    --------------------------
+    A building actuates either a heating device or a cooling one, never both,
+    so half of the returned range is inert: on a Vermont building a negative
+    command is simply "off". That is fine to issue -- but do not bid against
+    it. `BuildingObs.hp_draw_kwh()` tells you what a command actually costs.
 
     Usage -- one instance per agent, it keeps per-building state:
 
@@ -276,8 +320,8 @@ class Thermostat:
                 return {n: Action(hvac=self.thermostat(o), battery=0.0)
                         for n, o in obs.items()}
 
-    PRE-COOLING
-    -----------
+    PRE-COOLING AND PRE-HEATING
+    ---------------------------
     Nothing here is price-aware, and that is the open question in this
     exercise. `aim` is the one dial, and it can be passed per call so you need
     not mutate anything:
@@ -285,61 +329,61 @@ class Thermostat:
         cheap = mkt.grid_import_price < self.threshold
         hvac = self.thermostat(o, aim=-0.6 if cheap else 0.4)
 
-    Negative aim sits below the centre of the band, banking cold in the fabric;
-    positive sits near the top edge, so the compressor stays off. The building
-    is a thermal store nobody charges you for, and it is usually a larger one
-    than the actual battery.
+    Negative aim sits below the centre of the band, positive above it. The
+    building fabric is a thermal store nobody charges you for, and it is
+    usually a larger one than the actual battery.
 
-    Whether it pays is genuinely not obvious, and it depends on things you can
-    measure: how wide the expensive window is, the ratio between peak and
-    off-peak price, how heavy the fabric is, and how much room the comfort band
-    leaves you. A colder building also leaks faster, so the round trip is
-    lossy, and you are competing against a baseline that already sits near the
-    cheap edge of the band.
+    Whether it pays is genuinely not obvious. Measured here, moving the aim off
+    centre does save energy -- but it spends comfort margin to do it, and
+    comfort is PRICED, so the two run against each other:
 
-    Note that `aim` may exceed +1, which puts the target ABOVE the top of the
-    comfort band. That is legal and sometimes correct: comfort here is PRICED,
-    not constrained, so in a dear enough hour the degree-hours can be cheaper
-    than the kWh needed to avoid them. Nothing in this class will override
-    that choice -- see the note in __call__. Whether it is right is your
-    problem, and the answer moves with `comfort_price`: measured on the
-    thermal-mass portfolio, the best coasting aim was +0.4 at $3.00/degC-h and
-    +0.6 at $0.50/degC-h.
+        aim  where the target sits    in band   degC-h   imported
+        0.00   band centre              77.3%     3351      34678
+       -0.50   1.0 K above the floor    71.2%     3628      31393
+       -0.85   0.3 K above the floor    57.2%     4027      29813
 
-    Measure it before you commit to it: sweep `aim` over a few values and
-    compare the bills. On this stock the comfort band moves by up to 7 K
-    within a single building, so cold banked against a band that then steps
-    down underneath you is a real risk.
+    `aim` may also exceed +1, which puts the target ABOVE the top of the band.
+    That is legal and sometimes correct: in a dear enough hour the degree-hours
+    can be cheaper than the kWh needed to avoid them. Nothing here overrides
+    that -- the controller has no reflex forcing you back inside the band,
+    because once comfort is priced, being outside it is an economic decision
+    and not an error.
     """
 
-    def __init__(self, aim: float = 0.2, gain: float = 0.8,
-                 smooth: float = 0.5):
+    def __init__(self, aim: float = 0.0, gain: float = 0.11,
+                 integral: float = 0.03):
         #: Where to sit inside the band, as a fraction of the half-width:
-        #: 0 is the centre, -1 the bottom edge, +1 the top.
+        #: 0 is the centre, -1 the bottom edge, +1 the top. The default targets
+        #: the MIDDLE of the band.
         #:
-        #: Which end is the CHEAP end depends on the season, and the two
-        #: Annex 96 datasets disagree. Cooling in Texas, the top edge is cheap:
-        #: every degree colder than necessary leaks straight back in. Heating
-        #: in Vermont it is the bottom edge, for the mirror-image reason. So
-        #: there is no single right default -- pick it for the dataset you are
-        #: running, and the example agents pass it explicitly.
+        #: The middle is the neutral choice and it is season-agnostic, which
+        #: the edges are not: the two Annex 96 datasets disagree about which
+        #: edge is cheap. Cooling in Texas the top edge is, since every degree
+        #: colder than necessary leaks straight back in; heating in Vermont the
+        #: bottom edge is, for the mirror-image reason. Aiming at an edge also
+        #: spends your whole margin: a target 0.3 K inside a 4 K band sits
+        #: outside it on any ripple. See the table above for the trade.
         self.aim = aim
-        #: Proportional gain, in half-band widths. Larger is gentler.
+        #: Proportional gain: command per half-band of error. The default is
+        #: small on purpose. These compressors are worth roughly nine
+        #: half-bands per unit of command, so a gain near 1.0 -- which looks
+        #: reasonable, and is what this class used to ship -- saturates on any
+        #: error over 1.6 K and bang-bangs the building.
         self.gain = gain
-        #: How much of the previous command to carry over. This is the part
-        #: that matters: it damps the overshoot these heat pumps would
-        #: otherwise produce.
-        self.smooth = smooth
-        self._u = {}
+        #: Integral gain, same units, accumulated per hour. This is the part
+        #: that holds the setpoint against a steady heating load; without it
+        #: the loop sits permanently below target however the gain is set.
+        self.integral = integral
+        self._acc = {}
         self._cache = {}
 
     def __call__(self, o, aim: float = None) -> float:
         # IDEMPOTENT PER TIMESTEP. Agents routinely need the heat pump command
         # twice in one hour -- once in bid(), to work out how much energy they
         # are about to consume, and again in dispatch() to actually issue it.
-        # This object carries smoothing state, so advancing it twice per hour
-        # silently doubles the filter rate and wrecks the control. Cache
-        # instead, keyed on the building and timestep.
+        # This object carries integrator state, so advancing it twice per hour
+        # would wind it up at double rate and wreck the control. Cache instead,
+        # keyed on the building and timestep.
         aim = self.aim if aim is None else aim
         key = (o.name, o.timestep, round(aim, 4))
         if key in self._cache:
@@ -349,40 +393,24 @@ class Thermostat:
         half = max(0.25, 0.5 * (o.comfort_high - o.comfort_low))
         target = mid + aim * half
 
-        # Signed and bidirectional: negative cools, positive heats. The same
-        # expression covers both, which matters because the Annex 96 datasets
-        # are not the same problem -- Texas actuates a cooling device in June,
-        # Vermont a heating device in January, and a cooling-only controller
-        # lets a Vermont building fall to 5 degC against a 16-20 degC band.
-        error = o.indoor_temperature - target
-        raw = -min(1.0, max(-1.0, error / (half * self.gain)))
+        # Error in half-band units, positive when the building needs HEAT.
+        # Signed and bidirectional throughout: the Annex 96 datasets are not
+        # the same problem -- Texas actuates a cooling device in June, Vermont
+        # a heating device in January -- and the same expression covers both.
+        error = (target - o.indoor_temperature) / half
 
-        # Smoothing damps the overshoot a 15 kW heat pump would otherwise
-        # produce on an hourly step. Outside the band we drop the filter and
-        # act on this hour's error immediately, because the lag would cost a
-        # penalty every hour it persists.
-        #
-        # Note what this deliberately does NOT do: it does not force the
-        # compressor to full power to get back inside. Comfort is PRICED here,
-        # not constrained, and once it is priced the right response to being
-        # over the edge is an economic question, not a reflex. If the band is
-        # exceeded by 0.5 degC during the most expensive hour of the day, paying
-        # the degree-hours can easily beat buying the kWh to fix it -- and an
-        # agent that has deliberately aimed high to coast through the peak is
-        # doing exactly that on purpose. Slamming to full power would override
-        # its strategy at precisely the moment the strategy was meant to pay.
-        #
-        # So `aim` keeps its authority even outside the band. A high aim gives
-        # a small command and the building stays warm; a normal aim already
-        # gives a command near 1.0 by the time the edge is reached, so nothing
-        # is lost in the ordinary case.
-        if (o.indoor_temperature > o.comfort_high
-                or o.indoor_temperature < o.comfort_low):
-            u = raw
-        else:
-            u = self.smooth * self._u.get(o.name, 0.0) + (1.0 - self.smooth) * raw
+        acc = self._acc.get(o.name, 0.0) + error
+        raw = self.gain * error + self.integral * acc
+        u = min(1.0, max(-1.0, raw))
 
-        self._u[o.name] = u
+        # Anti-windup: only accumulate while the command is inside its range.
+        # Without this, a building that cannot reach its target -- because the
+        # band just stepped 7 K, or the compressor is genuinely too small for
+        # a -25 degC night -- keeps integrating, and the command stays pinned
+        # for hours after the error itself is gone.
+        if abs(raw) <= 1.0:
+            self._acc[o.name] = acc
+
         if len(self._cache) > 4096:
             self._cache.clear()
         self._cache[key] = u

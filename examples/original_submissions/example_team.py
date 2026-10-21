@@ -1,15 +1,16 @@
-"""Worked example submission. Copy this file, rename it, and edit.
+"""Worked example for the ORIGINAL 25-home exercise (docs/original_exercise.md).
 
-    cp submissions/example_team.py submissions/team_yourname.py
+The course runs on the altered Vermont stock instead -- start from
+submissions/_template.py for that. This file is kept as a reading example:
+its bid/dispatch structure carries over unchanged, its BUILDINGS do not.
 
-Then check it loads, and run it:
+To run it in the original exercise, alongside the other files in this folder:
 
-    python -m annex96p2p check submissions/team_yourname.py
+    python -m annex96p2p check examples/original_submissions/example_team.py
     python -m annex96p2p run --config config/default.yaml
 
 Every building you do not claim is run by the built-in default agent, so you
-always have a market full of opponents to trade against, even on your own
-laptop with only your own file present.
+always have a market full of opponents to trade against.
 
 THE ONE THING TO TAKE FROM THIS FILE
 ------------------------------------
@@ -67,12 +68,19 @@ NAME = "example_team"
 class ExampleAgent(Agent):
     """Price-aware battery, honest bidding, plain thermostat."""
 
-    #: Where to sit in the comfort band: -1 is the bottom edge. In a
-    #: heating-dominated month the bottom is the CHEAP end -- every degree
-    #: warmer than comfort requires is heat that leaks straight back out. All
-    #: four example agents use the same value, so the difference between them
-    #: is bidding and nothing else.
-    aim = -0.85
+    #: Where to sit in the comfort band: 0 is the centre, -1 the bottom
+    #: edge, +1 the top. Dispatch targets the MIDDLE of the band.
+    #:
+    #: The middle is the neutral choice, and it is the one to beat. Aiming at
+    #: an edge looks cheaper -- in a heating month every degree warmer than
+    #: required leaks straight back out, so the bottom edge is the cheap end --
+    #: but it leaves no margin: a target 0.3 K above the floor puts you under
+    #: the floor on any ripple, and comfort is PRICED here. Sweep it yourself
+    #: and find where the two effects balance.
+    #:
+    #: All four example agents use the same value, so the difference between
+    #: them is bidding and nothing else.
+    aim = 0.0
 
     def reset(self) -> None:
         self.seen_prices = []
@@ -109,15 +117,26 @@ class ExampleAgent(Agent):
         #
         # Leaving that second term out is the mistake this whole file is about,
         # and it is easy to make because `passive_net_kwh` looks like the
-        # answer. It is not: these compressors draw around 3.5 kW, so bidding
-        # without them means buying a fraction of what you use and taking the
-        # rest from the grid at full retail. An earlier version of this file
-        # did exactly that and scored WORSE than the default agent.
+        # answer. It is not: these compressors draw up to 19.5 kW electric on
+        # the Vermont stock, so bidding without them means buying a fraction of
+        # what you use and taking the rest from the grid at full retail. An
+        # earlier version of this file did exactly that and scored WORSE than
+        # the default agent.
+        #
+        # Getting the term in is not enough -- it has to be the RIGHT term.
+        # `o.hp_draw_kwh(cmd)` is doing real work here, and the obvious
+        # `abs(cmd) * o.hp_max_electric_kw` is wrong. Each building actuates
+        # exactly one device, so the infeasible half of the command is dropped
+        # by the physics: on these heating buildings a negative command is just
+        # "off". It draws nothing. Bidding as though it drew full power buys
+        # energy that is then curtailed rather than refunded. That error was
+        # worth 20,020 kWh of imaginary demand over five days here, because
+        # the thermostat spends 62% of its hours on the infeasible sign.
         #
         # `Thermostat` is idempotent per timestep, so asking it here and again
         # in dispatch() returns the same command both times.
         passive = sum(o.passive_net_kwh
-                      + abs(self.thermostat(o, aim=self.aim)) * o.hp_max_electric_kw
+                      + o.hp_draw_kwh(self.thermostat(o, aim=self.aim))
                       for o in obs.values())
         surplus = max(0.0, -passive)
 
@@ -149,21 +168,41 @@ class ExampleAgent(Agent):
         grid = mkt.grid_import_price
         need, available = plan["need"], plan["available"]
 
+        # --- NEVER BID A POSITION YOU CANNOT PHYSICALLY HONOUR --------------
+        # Once the thermostat command is fixed, `need` is exactly what the
+        # buildings will consume, and the battery can move anywhere in
+        # [-available, +headroom]. So the physical net has to land somewhere in
+        #
+        #     [need - available,  need + headroom]
+        #
+        # and settlement is `residual = physical net - cleared position`. Buy
+        # past the top of that interval and the excess is CURTAILED -- you paid
+        # for it and it vanished. Sell past the bottom and you buy the gap back
+        # from the grid at full retail, having been paid less for it.
+        #
+        # So treat the interval as a budget and spend it in priority order.
+        # Measured on 14 days of the Vermont January, over-buying past this
+        # limit was 62% of all the energy this portfolio shed.
+        buy_budget = max(0.0, need + plan["headroom"])
+        sell_budget = max(0.0, available - need)
+
         if need > 0:
             # The part storage CANNOT cover. If we do not buy this it comes
             # off the meter at the full retail price, so we will pay almost
             # anything short of that.
-            must_have = max(0.0, need - available)
+            must_have = max(0.0, min(need - available, buy_budget))
             if must_have > 0:
                 bid.buy(grid - 0.01, must_have)
+                buy_budget -= must_have
 
             # The part storage CAN cover. We do not need this at all -- the
             # battery will do it for free. Buying is only worthwhile if it is
             # cheap enough to be worth sparing the charge for later, so bid
             # low and let it go if nobody sells at that price.
-            optional = need - must_have
+            optional = max(0.0, min(need - must_have, buy_budget))
             if optional > 0:
                 bid.buy(min(0.5 * grid, grid - 0.02), optional)
+                buy_budget -= optional
         else:
             # Surplus. Whatever our own battery can take is free and never
             # touches the market; the rest is perishable, because with no
@@ -171,7 +210,7 @@ class ExampleAgent(Agent):
             # price it low enough to clear -- undercut the last clearing
             # price, which is the only feedback the market gives us.
             storable = min(plan["surplus"], plan["headroom"])
-            perishable = plan["surplus"] - storable
+            perishable = min(plan["surplus"] - storable, sell_budget)
             if perishable > 0:
                 last = mkt.last_clearing_price
                 bid.sell(max(0.01, (last - 0.01) if last else 0.02), perishable)
@@ -179,11 +218,13 @@ class ExampleAgent(Agent):
         # Top the battery up when energy is genuinely cheap, but leave room
         # for our own solar later -- that solar is free and would otherwise be
         # curtailed, so filling the battery overnight can cost more than it saves.
+        # Note this comes LAST and spends only what the budget has left: it is
+        # the lowest-priority leg, so it is the one that gets trimmed.
         if plan["cheap"]:
             soc = sum(o.battery_soc_kwh for o in obs.values() if o.has_battery)
             cap = sum(o.battery_capacity_kwh for o in obs.values() if o.has_battery)
             if cap > 0 and soc < 0.4 * cap:
-                room = min(plan["headroom"], 0.4 * cap - soc)
+                room = min(plan["headroom"], 0.4 * cap - soc, buy_budget)
                 if room > 0:
                     bid.buy(min(0.4 * grid, grid - 0.02), room)
 
@@ -227,22 +268,43 @@ class ExampleAgent(Agent):
         need = plan["need"]                          # already includes the heat pump
         residual = need - result.quantity
 
-        total_power = sum(o.battery_max_power_kw for o in obs.values()
-                          if o.has_battery)
-        soc = sum(o.battery_soc_kwh for o in obs.values() if o.has_battery)
-        capacity = sum(o.battery_capacity_kwh for o in obs.values()
-                       if o.has_battery)
+        # --- SPLIT THE MOVE BY EACH BUILDING'S OWN ROOM, NOT BY ITS SIZE ----
+        # The portfolio move has to be shared out across the batteries, and the
+        # obvious way -- one command sent to all of them -- is wrong. A single
+        # `battery_cmd` gives each building a share proportional to its rated
+        # POWER, but what a building can actually take is limited by its own
+        # remaining CAPACITY. Send the same command to a full battery and a
+        # half-empty one and the full one silently clips, so the portfolio
+        # absorbs less than it bid for and the difference is curtailed.
+        #
+        # So weight each building by the room it actually has this hour. The
+        # shares then sum to exactly the move, and no building is asked for
+        # more than it can do.
+        room = {}
+        for name, o in obs.items():
+            if not o.has_battery:
+                continue
+            room[name] = (min(o.battery_max_power_kw, o.battery_soc_kwh)
+                          if residual > 0 else
+                          min(o.battery_max_power_kw,
+                              max(0.0, o.battery_capacity_kwh - o.battery_soc_kwh)))
+        total_room = sum(room.values())
 
-        if residual > 0:
-            move = -min(residual, total_power, soc)              # discharge
-        else:
-            move = min(-residual, total_power, max(0.0, capacity - soc))  # charge
+        # The move is capped by the room available, which is the whole point:
+        # `bid()` already limited the position to this same interval, so in the
+        # ordinary case nothing is clipped here at all.
+        magnitude = min(abs(residual), total_room)
+        sign = -1.0 if residual > 0 else 1.0                # -1 discharge
 
         # `Action.battery` is a fraction of rated POWER, not an energy. Sending
         # 1.0 when the plan called for 2 kWh out of a 5 kW battery would pull
         # the extra 3 kWh off the grid at full retail.
-        battery_cmd = (float(np.clip(move / total_power, -1.0, 1.0))
-                       if total_power > 0 else 0.0)
+        battery_cmd = {}
+        for name, r in room.items():
+            share = magnitude * (r / total_room) if total_room > 0 else 0.0
+            power = obs[name].battery_max_power_kw
+            battery_cmd[name] = (float(np.clip(sign * share / power, -1.0, 1.0))
+                                 if power > 0 else 0.0)
 
         # --- PRE-COOLING: THE HOOK IS HERE, THE STRATEGY IS NOT ------------
         # The thermostat takes an `aim`: where inside the comfort band to sit,
@@ -276,7 +338,7 @@ class ExampleAgent(Agent):
 
             actions[name] = Action(
                 hvac=hvac,
-                battery=battery_cmd if o.has_battery else 0.0,
+                battery=battery_cmd.get(name, 0.0),
             )
 
         self._plan_cache = None

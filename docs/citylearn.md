@@ -1,8 +1,11 @@
 # The building stock
 
 This is the only backend: the real Annex 96 Common Exercise 1 neighbourhood,
-25 ResStock homes in Texas, 720 hourly timesteps from June, with LSTM thermal
-dynamics per building.
+25 ResStock homes per dataset -- Vermont in January (743 hourly steps, the
+course default) and Texas in June (719) -- with LSTM thermal dynamics per
+building. The course market (README) is 20 of the Vermont homes with their PV
+and batteries redistributed; everything below about the CityLearn adapter
+applies to it unchanged.
 
 Everything below was read off a live environment rather than assumed, and the
 four items under "What the real stock does differently" were all wrong in the
@@ -34,39 +37,50 @@ pinned at its initial value until the model has that much history -- the
 cooling action provably does nothing before then. Harmless over 720 steps;
 do not draw conclusions from a two-day run.
 
-**4. Comfort is much harder here, and the price must be recalibrated.** The
-band is the observed setpoint plus or minus `comfort_band`, about 19.8-23.8 degC
-on building 0, while June in Texas pushes the fabric to 28 degC unaided. The heat
-pumps are ~3.5 kW electric at a COP over 4 -- roughly 15 kW of cooling on one
-house -- and the LSTM responds violently to hourly switching, with 6-9 K swings
-per step. Measured over 168 steps on five buildings:
+**4. Comfort is much harder here, and it needs a PI controller.** The band is
+the observed setpoint plus or minus `comfort_band` — 16-20 degC on Vermont
+building 0 — and it *moves*, by up to 7 K within a single building.
 
-| control | degC-h | cooling kWh |
-|---|---:|---:|
-| compressor off | 5560 | 56 |
-| compressor full | 6830 | 2770 |
-| bang-bang at band top | 559 | 551 |
-| proportional at band top | 272 | 486 |
-| proportional at band centre | 580 | 596 |
-| **smoothed, aimed above centre** (what ships) | **112** | 3313 |
+The heat pumps are enormous relative to an hourly step. On the Vermont stock
+they draw up to **19.5 kW electric** at a heating COP of about 1.2, and one hour
+at full command moves the indoor temperature roughly **15 K**. Anything that
+saturates bang-bangs the building. Measured on all 25 Vermont buildings, aiming
+at the centre of the band, skipping the first 48 h so startup is excluded:
 
-Two things in that table are worth pausing on. Permanently full is *worse*
-than permanently off, because it overshoots below the lower edge. And the
-smoothed controller — now `api.Thermostat`, used by the default agent and both
-examples — cuts exceedance another 2.4-fold at the cost of 67% more cooling
-energy.
+| control | in band | degC-h | worst excursion |
+|---|---:|---:|---:|
+| proportional, band 1.6 K (what used to ship) | 33.3% | 7908 | 35.1 K |
+| proportional, band widened to 16 K | 3.5% | 8427 | 9.8 K |
+| **proportional + integral** (what ships) | **77.3%** | **3351** | — |
 
-That energy cost is why `comfort_price` is **0.50** in `config/default.yaml`
-rather than the 3.00 the mock uses. It is set from a measured breakeven, not
-by feel: better control pays for its own energy only above roughly
-$0.18/degC-h, so below that ignoring comfort is the rational strategy and the
-term is decorative. At 3.00 comfort would be 90% of the bill and the market
-would be irrelevant.
+The middle row is the one to pause on, because it is counterintuitive:
+widening the proportional band cuts the worst excursion nearly four-fold and
+still makes in-band *worse*. It trades oscillation for a larger steady offset,
+and that is structural — a P controller produces output only in proportion to
+error, so against the large, steady load of a January heating season it settles
+permanently below target no matter how it is tuned. Integral action is what
+fixes this loop; gain tuning is not. `api.Thermostat` is therefore a PI
+controller with anti-windup, and it is used by the default agent and all four
+examples.
 
-Splitting exceedance into the part that follows a setpoint step (unavoidable —
-the band moves by up to 7 K within a building) and the part where the band was
-stable, the smoothed controller cuts the *control-attributable* share 24-fold,
-from 694 to 29 degC-h.
+Two failure modes this cost real debugging time to find, both worth knowing
+before you write your own controller:
+
+- **the command is one-directional.** Each building actuates a heating device
+  or a cooling one, never both, and the physics discards the infeasible half —
+  on a Vermont building a negative command is simply "off". It is harmless to
+  issue but ruinous to *bid* against: 62% of the thermostat's commands are the
+  infeasible sign, so pricing them as full power invented 20,020 kWh of demand
+  over five days. Use `BuildingObs.hp_draw_kwh()`.
+- **the controller state must be idempotent per timestep.** Agents need the
+  command twice an hour, once in `bid()` and once in `dispatch()`. Advancing an
+  integrator twice per step winds it up at double rate.
+
+`comfort_price` is **0.50** in `config/default.yaml`. It is set from a measured
+breakeven, not by feel: better control pays for its own energy only above
+roughly $0.18/degC-h, so below that ignoring comfort is the rational strategy
+and the term is decorative. At 3.00 comfort would be 90% of the bill and the
+market would be irrelevant.
 
 ### The market is thin here, and that is structural
 
@@ -97,21 +111,31 @@ instructive thing in the exercise.
 ## Setup
 
 ```bash
-pip install -e ".[citylearn]"
-git clone https://github.com/kkaspar10/annex96_common_exercise_1 ../annex96_ce1
+python -m pip install -r scenarios/requirements.txt
+python -m pip install -e .
+git clone -c core.longpaths=true https://github.com/kkaspar10/annex96_common_exercise_1 ../annex96_common_exercise_1
+git -C ../annex96_common_exercise_1 checkout 28ab31e88f9f4e1559bca7be3aaae8c918a20f83
 ```
 
-Point a config at the schema:
+Do not install CityLearn from PyPI: the runner imports the exercise's own
+fork from the upstream checkout, and `scenarios/requirements.txt` pins what
+that fork needs.
+
+Point a config at the schema. Both keys are needed: the schema references its
+data files by relative path, so the runner has to know the repo root too.
 
 ```yaml
-backend: citylearn
-citylearn_schema: ../annex96_ce1/data/datasets/annex96_ce1_tx_neighborhood/schema.json
-days: 7
+citylearn_root: ../annex96_common_exercise_1
+citylearn_schema: ../annex96_common_exercise_1/data/datasets/annex96_ce1_vt_neighborhood/schema.json
+days: 7          # blank runs the dataset's full length
 ```
 
-The CE1 buildings carry LSTM dynamics models, so this also needs PyTorch and
-is far slower than the mock backend. Develop against the mock backend, then
-confirm here.
+Swap `vt` for `tx` to run the Texas summer instead. The two datasets share no
+building ids, so every submission's `BUILDINGS` list has to be reissued when
+you switch — run `python -m annex96p2p buildings` to list them.
+
+The CE1 buildings carry LSTM dynamics models, so this also needs PyTorch and is
+slow. Iterate with a small `days:`, then confirm on the full run.
 
 ## What has to change in the dataset
 
@@ -186,7 +210,7 @@ Work through this once against the real dataset.
 - [ ] Comfort band: the adapter derives it as the cooling setpoint plus or
       minus 2 K. CE1 specifies 20–24 °C heating and 22–26 °C cooling. Set
       `comfort_low` and `comfort_high` explicitly if that derivation is wrong.
-- [ ] Units. The mock backend works in kWh per hourly timestep throughout.
+- [ ] Units. Everything is kWh per hourly timestep throughout.
       Confirm `net_electricity_consumption` is kWh and not kW, and that
       `solar_generation` sign matches (the adapter takes `abs()`).
 - [ ] Run `python -m annex96p2p run` with no submissions and confirm the
@@ -196,7 +220,7 @@ Work through this once against the real dataset.
 
 ## Sizing the market
 
-CE1's 25 homes support a much larger cohort than the mock backend's 12.
+CE1's 25 homes support a cohort of five teams of five buildings each.
 With 5 buildings each that is five teams; with 2 each, twelve and one spare.
 
 Whatever you choose, **make the partitions deliberately unequal**. Stratify

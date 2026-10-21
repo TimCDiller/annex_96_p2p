@@ -65,8 +65,9 @@ class Flat50Agent(Agent):
     #: Treat the battery as full/empty outside these bounds.
     full_at = 0.97
     empty_at = 0.03
-    #: Where to sit in the comfort band: -1 is the bottom edge.
-    aim = -0.85
+    #: Where to sit in the comfort band: 0 is the centre, -1 the bottom
+    #: edge, +1 the top. Dispatch targets the middle.
+    aim = 0.0
 
     def reset(self) -> None:
         self.thermostat = Thermostat()
@@ -91,7 +92,7 @@ class Flat50Agent(Agent):
         full = (soc / cap) if cap > 0 else 1.0
 
         need = sum(o.passive_net_kwh
-                   + abs(self.thermostat(o, aim=self.aim)) * o.hp_max_electric_kw
+                   + o.hp_draw_kwh(self.thermostat(o, aim=self.aim))
                    for o in obs.values())
 
         # Whatever storage cannot cover would come off the meter at retail, so
@@ -126,7 +127,7 @@ class Flat50Agent(Agent):
     def dispatch(self, obs: Dict[str, BuildingObs], mkt: MarketInfo,
                  result: TradeResult) -> Dict[str, Action]:
         hvac = {n: self.thermostat(o, aim=self.aim) for n, o in obs.items()}
-        need = sum(o.passive_net_kwh + abs(hvac[n]) * o.hp_max_electric_kw
+        need = sum(o.passive_net_kwh + o.hp_draw_kwh(hvac[n])
                    for n, o in obs.items())
 
         # Battery before grid: aim at a zero residual so nothing is imported

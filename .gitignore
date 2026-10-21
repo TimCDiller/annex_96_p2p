@@ -5,6 +5,8 @@ __pycache__/
 build/
 dist/
 .venv/
+.venv-scenarios/
+generated/
 venv/
 env/
 .pytest_cache/

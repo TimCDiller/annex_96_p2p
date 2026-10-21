@@ -1,49 +1,60 @@
-# The Annex 96 Common Exercise 1 neighbourhood: Texas, 25 homes,
-# Texas, 25 homes, 720 timesteps (30 days from June).
+# The Annex 96 Common Exercise 1 neighbourhood: 25 ResStock homes.
 #
+# Two datasets ship, and they are different control problems. This config runs
+# VERMONT. To switch, point `citylearn_schema` at the other one and re-run
+# `python -m annex96p2p buildings` -- the two share no building ids, so every
+# submission's BUILDINGS list has to be re-issued as well.
 #
-# Building the environment takes ~30 s and each timestep ~0.15 s, so a full
-# 720-step run is about two minutes -- doubled while `reference: true`.
-# Set `days:` to 2 or 3 while iterating.
+#   annex96_ce1_vt_neighborhood   January, heating_device actuated, 743 steps
+#   annex96_ce1_tx_neighborhood   June,    cooling_device actuated, 719 steps
+#
+# Which one you want depends on what the exercise is FOR. In the Vermont
+# January the peer-to-peer market moves about 1.2% of the energy, because only
+# ~2% of participant-hours are net producing and a 2.9 kW battery discharge
+# cannot dent a 19.5 kW compressor -- so bidding barely separates the agents.
+# Texas in June puts real PV surplus into the middle of the day, which is when
+# a peer-to-peer market has something to do.
+#
+# Building the environment takes ~30 s and each timestep ~0.15 s, so a full run
+# is a couple of minutes -- doubled while `reference: true`. Set `days:` to 2
+# or 3 while iterating.
 citylearn_root: ../annex96_common_exercise_1
 citylearn_schema: ../annex96_common_exercise_1/data/datasets/annex96_ce1_vt_neighborhood/schema.json
-days:                      # blank = the dataset's full 720 timesteps
+days:                      # blank = the dataset's full length
 
-submissions: submissions
+submissions: examples/original_submissions
 default_agent: rbc
 conflict_policy: first
 
 # --- prices ----------------------------------------------------------------
 # CE1 ships no pricing at all, so prices come from here rather than from the
-# schema. Swap in real ERCOT day-ahead data for June to make this realistic.
+# schema. Swap in real day-ahead data for the matching region and month to make
+# this realistic -- ISO-NE for Vermont, ERCOT for Texas.
 price_csv:
 delivery_adder: 0.075
 price_volatility: 0.15
 export_price: 0.0          # CE1 rule: no export to the grid
-# NOTE the value, and why it is not the 3.00 the mock backend uses. The
-# comfort price has to be calibrated to the building stock, and these
-# buildings are far harder to keep comfortable than the synthetic ones:
+# NOTE the value. The comfort price has to be calibrated to the building stock,
+# and these buildings are hard to keep comfortable:
 #
-#   * the band is the observed setpoint +/- comfort_band, about 19.8-23.8 degC
-#     on building 0, while June in Texas pushes the fabric to 28 degC unaided;
-#   * the heat pumps are ~3.5 kW electric at a COP over 4, so about 15 kW of
-#     cooling on a single house, and the LSTM dynamics respond violently to
-#     hourly switching -- temperature swings of 6-9 K per step are normal;
-#   * measured over 168 steps on five buildings, the best of five simple
-#     controllers still leaves 272 degC-h. Compressor permanently off gives
-#     5560; permanently full gives 6830, which is WORSE than off because it
-#     overshoots below the lower edge of the band.
+#   * the band is the observed setpoint +/- comfort_band -- 16-20 degC on
+#     Vermont building 0 -- and it MOVES, by up to 7 K within one building;
+#   * the heat pumps are up to 19.5 kW ELECTRIC at a heating COP near 1.2, and
+#     one hour at full command moves the indoor temperature about 15 K, so
+#     anything that saturates swings the building wildly;
+#   * proportional control alone cannot hold these buildings at all. It settles
+#     permanently below target against a steady heating load, and widening its
+#     band makes in-band worse rather than better. `api.Thermostat` is a PI
+#     controller for that reason: 33.3% -> 77.3% of hours inside the band.
 #
-# The value is set from a measured breakeven, not by feel. A smoothed
-# thermostat cuts control-attributable exceedance 24-fold (694 -> 29 degC-h over
-# 168 hours on all 25 buildings) but spends about 67% more cooling energy. Those
-# two balance at roughly $0.18/degC-h:
+# The value is set from a measured breakeven, not by feel. Good control pays
+# for its own energy only above roughly $0.18/degC-h:
 #
 #   below that   ignoring comfort is the RATIONAL strategy, which makes the
 #                whole comfort term decorative
 #   at 0.50      good control pays for its own energy several times over, and
-#                comfort is around 15% of a well-run bill -- a real term that
-#                still leaves the trading exercise visible
+#                comfort is a real term in the bill that still leaves the
+#                trading exercise visible
 #   at 3.00      comfort is 90% of the bill and the market is irrelevant
 #
 # Raise it if you want thermal control to be the main event; lower it towards

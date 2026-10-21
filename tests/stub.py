@@ -37,9 +37,14 @@ class StubBackend(Backend):
 
     hours_per_step = 1.0
 
-    def __init__(self, n_buildings: int = 6, days: int = 2):
+    def __init__(self, n_buildings: int = 6, days: int = 2,
+                 hp_is_heating: bool = True):
         self.building_names = ["S%02d" % (i + 1) for i in range(n_buildings)]
         self.n_timesteps = days * 24
+        # Which way the heat pump is plumbed. Only one sign of the `hvac`
+        # command does anything, and a submission that bids against the other
+        # half buys energy it never consumes -- so tests need both directions.
+        self.hp_is_heating = hp_is_heating
         # Alternate the equipment so tests can exercise both branches: even
         # buildings have a battery and no PV, odd ones the reverse.
         self._spec = {}
@@ -89,6 +94,7 @@ class StubBackend(Backend):
                 battery_capacity_kwh=s["battery_kwh"],
                 battery_max_power_kw=s["battery_kw"],
                 hp_max_electric_kw=s["hp_kw"], hp_cop=3.0,
+                hp_is_heating=self.hp_is_heating,
                 last_net_kwh=self._last[n],
             )
         return out
