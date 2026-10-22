@@ -5,6 +5,11 @@ winter stock described in the [README](../README.md). This page keeps the
 original setup -- the real Annex 96 Common Exercise 1 neighbourhood, unaltered,
 scored against `SimpleRBCAgent` -- for comparison and for instructors.
 
+Numbers on this page were measured before the shared `Thermostat` gained
+smoothing (it now blends each command with the previous hour's; see its
+docstring). Re-run to get current figures; the comparisons between agents
+still illustrate the same points.
+
 The bidding API, market rules and debugging guide in the README apply here
 unchanged. What differs is the building stock, the baseline agent, the runner
 (`python -m annex96p2p run` with `config/default.yaml`) and the scoring.

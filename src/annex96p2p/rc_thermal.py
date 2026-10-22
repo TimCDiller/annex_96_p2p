@@ -49,7 +49,9 @@ def identify(backend, schema: str, output: str | Path) -> dict:
     if backend.n_timesteps < FIT_STEPS + VALIDATION_STEPS:
         raise ValueError("RC identification needs seven complete days")
     backend.reset()
-    thermostat = Thermostat()
+    # The bare PI loop, as when the published models were fitted: smoothing
+    # would change the excitation the fit sees.
+    thermostat = Thermostat(smoothing=0.0)
     names = list(backend.building_names)
     samples = {name: [] for name in names}
     for t in range(FIT_STEPS + VALIDATION_STEPS):

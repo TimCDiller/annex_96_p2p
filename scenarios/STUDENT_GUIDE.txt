@@ -119,7 +119,8 @@ and future actual loads are not passed to the controller. There is no central
 storage allocation API: storage service means buying energy now and selling it
 later through the ordinary peer-to-peer market, with no bilateral storage contract.
 
-The baseline controller targets the middle of the comfort band, buys solar for
+The baseline controller targets the middle of the comfort band with the
+shared smoothed thermostat (api.Thermostat, smoothing=0.5), buys solar for
 storage, and sells during both price peaks. Before each peak it fills the
 battery from the grid in the cheapest hours if peers did not supply enough:
 overnight to cover yesterday's morning shortfall (at least a quarter of

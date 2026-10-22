@@ -303,7 +303,8 @@ class Thermostat:
         a single building, sometimes 6 K in three hours. Some exceedance right
         after a step is simply unavoidable.
 
-    Measured on the Vermont neighbourhood, all 25 buildings, aiming at the
+    Measured on the original Vermont neighbourhood, all 25 buildings, before
+    SMOOTHING (below) was added, aiming at the
     centre of the band and skipping the first 48 h so that startup is excluded:
 
         proportional only, band 1.6 K       33.3% of hours in band
@@ -345,7 +346,8 @@ class Thermostat:
     building fabric is a thermal store nobody charges you for, and it is
     usually a larger one than the actual battery.
 
-    Whether it pays is genuinely not obvious. Measured here, moving the aim off
+    Whether it pays is genuinely not obvious. Measured on the original stock
+    with the bare PI loop, moving the aim off
     centre does save energy -- but it spends comfort margin to do it, and
     comfort is PRICED, so the two run against each other:
 
@@ -360,10 +362,31 @@ class Thermostat:
     that -- the controller has no reflex forcing you back inside the band,
     because once comfort is priced, being outside it is an economic decision
     and not an error.
+
+    SMOOTHING
+    ---------
+    The PI loop alone settles into a two-hour limit cycle on these homes: it
+    acts once an hour on a heat pump that moves them about 1 K per kWh, so it
+    overshoots, switches off, undershoots, switches on. On the altered Vermont
+    stock consecutive hourly temperature changes correlated at -0.63, and one
+    house paid $1,221 a month in comfort penalties for it. Each command is
+    therefore blended with the previous hour's: `smoothing` is the share
+    carried over. Measured on the altered stock, days 8-31, all 20 houses on
+    the default agent:
+
+        smoothing   K/h swing   lag-1 corr   degC-h   hours in band   bill
+          0.0         1.66        -0.63       3315       84.7%       $6,794
+          0.5         0.26        +0.30        141       97.7%       $5,990
+
+    Holding the band costs heating energy (+15%): the oscillating loop saved
+    energy by running houses cold, and in calm houses the smoothed loop costs
+    a few percent more. Running colder is still available, deliberately --
+    through `aim`, where it is a priced decision rather than a side effect of
+    a control fault. `smoothing=0` restores the bare PI loop.
     """
 
     def __init__(self, aim: float = 0.0, gain: float = 0.11,
-                 integral: float = 0.03):
+                 integral: float = 0.03, smoothing: float = 0.5):
         #: Where to sit inside the band, as a fraction of the half-width:
         #: 0 is the centre, -1 the bottom edge, +1 the top. The default targets
         #: the MIDDLE of the band.
@@ -386,8 +409,12 @@ class Thermostat:
         #: that holds the setpoint against a steady heating load; without it
         #: the loop sits permanently below target however the gain is set.
         self.integral = integral
+        #: Share of last hour's command carried into this hour's, 0 to <1.
+        #: 0.5 removes the limit cycle; see SMOOTHING above.
+        self.smoothing = float(min(0.95, max(0.0, smoothing)))
         self._acc = {}
         self._cache = {}
+        self._last = {}
 
     def __call__(self, o, aim: float = None) -> float:
         # IDEMPOTENT PER TIMESTEP. Agents routinely need the heat pump command
@@ -422,6 +449,12 @@ class Thermostat:
         # for hours after the error itself is gone.
         if abs(raw) <= 1.0:
             self._acc[o.name] = acc
+
+        # Smoothing: blend with last hour's command, if there was one.
+        last = self._last.get(o.name)
+        if self.smoothing > 0 and last is not None and last[0] == o.timestep - 1:
+            u = self.smoothing * last[1] + (1.0 - self.smoothing) * u
+        self._last[o.name] = (o.timestep, u)
 
         if len(self._cache) > 4096:
             self._cache.clear()

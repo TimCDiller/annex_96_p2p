@@ -117,9 +117,9 @@ python -m annex96p2p.altered_stock run --configurations balanced --modes competi
 Every house you do not claim is run by the default agent,
 `StorageServiceAgent` in [stock_agents.py](src/annex96p2p/stock_agents.py),
 one participant per house. So your market is full of counterparties even when
-yours is the only file in `submissions/`. It is not a weak opponent: it keeps
-the comfort band, fills its battery from cheap midday and overnight power
-before each price peak, sells into the peaks, and lets its battery absorb
+yours is the only file in `submissions/`. It is not a weak opponent: it holds
+the comfort band with a smoothed thermostat, fills its battery from cheap
+midday and overnight power before each price peak, sells into the peaks, and lets its battery absorb
 forecast error in real time (`net_target_kwh`, see [`Action`](#action--what-you-return-one-per-building)).
 
 `--days 7` takes about 20 seconds; drop it for the full month (a minute or
@@ -183,15 +183,15 @@ fifth of each peak.
 
 | full month, balanced | all default | with the market player | change |
 |---|---:|---:|---:|
-| the player's house | $403.31 | $369.51 | −$33.80 (−8.4%) |
-| clearing price in the hours it sold | 67% of grid | 90% of grid | |
-| the other nine storage-rich homes | $4,553 | $4,241 | −$312 |
-| the ten PV-rich homes | $5,768 | $6,120 | +$351 |
-| all 20 houses | $10,725 | $10,730 | +$6 |
+| the player's house | $420.33 | $388.88 | −$31.45 (−7.5%) |
+| clearing price in the hours it sold | 66% of grid | 90% of grid | |
+| the other nine storage-rich homes | $3,721 | $3,337 | −$383 |
+| the ten PV-rich homes | $5,705 | $6,130 | +$424 |
+| all 20 houses | $9,846 | $9,856 | +$9 |
 
 One house holding out for 80% of the grid price lifted the peak price for
-every seller in those hours, so the other storage owners gained ten times what
-the player did, without changing anything themselves. The PV-rich homes,
+every seller in those hours, so the other storage owners gained more than ten
+times what the player did, without changing anything themselves. The PV-rich homes,
 buying at the peaks, paid for all of it. Physically almost nothing changed:
 curtailment, grid imports and traded volume each moved by less than 1%. Strategic
 pricing moved money between participants; it did not create any. Keep that in
@@ -400,7 +400,10 @@ its passive position, then runs the heat pump without having bought for it.
 [`_example_half_battery.py`](submissions/_example_half_battery.py) shows the
 fix — decide the heat pump and battery once, in `bid()`, and let `dispatch()`
 carry out the same plan. Call `Thermostat` once per hour only; it is a PI
-controller and remembers its past calls.
+controller and remembers its past calls. It also blends each command with the
+previous hour's (`smoothing=0.5`), because the bare loop settles into a
+two-hour on/off cycle on these heat pumps; the docstring in
+[api.py](src/annex96p2p/api.py) has the measurements.
 
 Or subclass the default agent and override only what you want to change,
 as [`_template.py`](submissions/_template.py) does. Read
