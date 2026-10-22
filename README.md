@@ -198,6 +198,10 @@ pricing moved money between participants; it did not create any. Keep that in
 mind when you read your own result: your score depends on the others, and the
 others' bills depend on you.
 
+More experiments like this one — what beats the default agent, whether a house
+can store heat, cartels, hardliners and cheaters — are written up in the
+[scenario gallery](docs/scenarios/README.md).
+
 ---
 
 ## Handing in
