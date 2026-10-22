@@ -120,7 +120,14 @@ storage allocation API: storage service means buying energy now and selling it
 later through the ordinary peer-to-peer market, with no bilateral storage contract.
 
 The baseline controller targets the middle of the comfort band, buys solar for
-storage, keeps an overnight morning reserve, and sells during both price peaks.
+storage, and sells during both price peaks. Before each peak it fills the
+battery from the grid in the cheapest hours if peers did not supply enough:
+overnight to cover yesterday's morning shortfall (at least a quarter of
+capacity), and at 12:00-15:00 to 95% for the evening peak. It dispatches with
+Action.net_target_kwh, so its batteries absorb forecast error in real time:
+unsold surplus is stored rather than curtailed. A house with its own surplus
+never discharges, and once the morning sun is up the houses buy peers' solar
+for storage instead of exporting stored energy against it.
 Its forecast is deliberately simple and imperfect. CityLearn's observations
 precede the physical transition by one hour, so using observed PV unchanged as
 next-hour PV can create grid-backed sales. Inspect the settlement and physical

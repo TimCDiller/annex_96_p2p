@@ -62,7 +62,9 @@ plausible-looking nonsense rather than an error:
    This is CityLearn's own convention and is NOT corrected here -- agents are
    bidding on a step whose load and PV they cannot see, which on a sunrise
    ramp reached 8.4 kWh in a single building-hour and is the largest single
-   cause of curtailment in a run. Treat it as a forecasting problem.
+   cause of curtailment in a run. Treat it as a forecasting problem -- or
+   dispatch with Action.net_target_kwh, which lets the battery absorb the
+   error within the step (see `_balancing`), as far as its power allows.
 
 Two further notes on the dataset itself:
 
@@ -184,10 +186,37 @@ class CityLearnBackend(Backend):
             power = float(getattr(st, "nominal_power", 0.0) or 0.0)
             self._batt_scale.append((power / cap) if cap > 0 else 0.0)
 
+        # Real-time battery balancing for Action.net_target_kwh. CityLearn
+        # updates the battery LAST within a step, after the heat pump and the
+        # household load for that hour, so at that moment the hour's actual
+        # demand and PV are known. For a building with a target, replace the
+        # fixed-rate battery update with one that charges or discharges the
+        # difference between the target and that demand; Battery.charge()
+        # still enforces power, capacity and depth-of-discharge limits.
+        # Pinned by tests/test_citylearn.py::test_net_target_is_met.
+        self._targets: List[Optional[float]] = [None] * len(self.env.buildings)
+        for i, b in enumerate(self.env.buildings):
+            if getattr(b, "electrical_storage", None) is not None:
+                b.update_electrical_storage = self._balancing(i, b,
+                                                              b.update_electrical_storage)
+
         self._t = 0
         self._raw: List = []
         self._last_net = {n: 0.0 for n in self.building_names}
         self.reset()
+
+    def _balancing(self, i, building, fixed_rate):
+        def update(action: float):
+            target = self._targets[i]
+            if target is None:
+                return fixed_rate(action)
+            t = building.time_step
+            demand = sum(float(d.electricity_consumption[t]) for d in (
+                building.cooling_device, building.heating_device,
+                building.dhw_device, building.non_shiftable_load_device))
+            surplus = abs(float(building.solar_generation[t]))
+            building.electrical_storage.charge(target - (demand - surplus))
+        return update
 
     # ------------------------------------------------------------------ core
     def reset(self) -> None:
@@ -279,8 +308,14 @@ class CityLearnBackend(Backend):
         return out
 
     def step(self, actions: Dict[str, Action]) -> Dict[str, StepOutcome]:
-        encoded = [self._encode(i, actions.get(n) or Action())
-                   for i, n in enumerate(self.building_names)]
+        chosen = [actions.get(n) or Action() for n in self.building_names]
+        for i, a in enumerate(chosen):
+            self._targets[i] = getattr(a, "net_target_kwh", None)
+            if self._targets[i] is not None:
+                # A zero rate keeps the battery last in CityLearn's update
+                # order; a negative one would move it ahead of the loads.
+                chosen[i] = Action(hvac=a.hvac, battery=0.0)
+        encoded = [self._encode(i, a) for i, a in enumerate(chosen)]
         out = self.env.step(encoded)
         self._raw = out[0]
 

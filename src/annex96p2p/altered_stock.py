@@ -72,8 +72,15 @@ def run(backend, folder, mode, out, submissions=None, rc_model_path=None):
     parts = make_participants(manifest, mode, submissions, models, recipe["duck_prices"])
     by_name = manifest.set_index("building")
     records = []
+    bid_rows = []
 
     def recorder(step):
+        grid = step["market"].price_grid
+        for participant, levels in step["bids"].items():
+            levels = np.asarray(levels, dtype=float)
+            for j in np.flatnonzero(np.abs(levels) > 1e-9):
+                bid_rows.append((step["timestep"], participant, round(float(grid[j]), 4),
+                                 float(levels[j])))
         for i, name in enumerate(backend.building_names):
             outcome = step["outcomes"][name]
             b = backend.env.buildings[i]
@@ -103,6 +110,11 @@ def run(backend, folder, mode, out, submissions=None, rc_model_path=None):
         if hasattr(p.agent, "offer_log"):
             bids.extend(dict(participant=p.name, **r) for r in p.agent.offer_log)
     pd.DataFrame(bids).to_csv(out / "offers.csv", index=False)
+    # Every bid as submitted: one row per participant, hour and price level
+    # with a non-zero quantity (+ buy at that price or cheaper, - sell at that
+    # price or dearer). Enough to rebuild each participant's bid curve.
+    pd.DataFrame(bid_rows, columns=["timestep", "participant", "price", "quantity_kwh"]
+                 ).to_csv(out / "bids.csv", index=False)
     thermal = [dict(participant=p.name, **r) for p in parts
                for r in getattr(p.agent, "thermal_log", [])]
     if thermal:

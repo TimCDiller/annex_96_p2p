@@ -90,19 +90,20 @@ recipe is [scenarios/altered_stock.yaml](scenarios/altered_stock.yaml).
 ## Testing your agent
 
 **`submissions/` is where you test.** Put your agent there as one `.py` file,
-starting from one of the two starting points:
+starting from one of three starting points:
 
 | file | what it is |
 |---|---|
 | [`submissions/_template.py`](submissions/_template.py) | inherits the default agent unchanged — the smallest legal submission |
 | [`submissions/_example_half_battery.py`](submissions/_example_half_battery.py) | a complete simple agent written out in full: holds its battery at 50%, sells surplus from 20% of the grid price, buys shortfall up to 80% |
+| [`submissions/_example_market_player.py`](submissions/_example_market_player.py) | the default agent's physical plan with different prices: buys energy for storage only at $0.02 or less, sells in the peaks only at 80% of the grid price or more — see [what it does to the market](#one-player-moves-the-market-for-everyone) |
 
 ```bash
 cp submissions/_template.py submissions/team_yourname.py
 # set NAME and BUILDINGS to your Canvas assignment, then edit the agent
 ```
 
-Files starting with `_` are ignored by the runner, which is why the two
+Files starting with `_` are ignored by the runner, which is why the
 starting points are never loaded themselves. It also makes `_scratch.py` a
 safe place to experiment.
 
@@ -116,7 +117,10 @@ python -m annex96p2p.altered_stock run --configurations balanced --modes competi
 Every house you do not claim is run by the default agent,
 `StorageServiceAgent` in [stock_agents.py](src/annex96p2p/stock_agents.py),
 one participant per house. So your market is full of counterparties even when
-yours is the only file in `submissions/`.
+yours is the only file in `submissions/`. It is not a weak opponent: it keeps
+the comfort band, fills its battery from cheap midday and overnight power
+before each price peak, sells into the peaks, and lets its battery absorb
+forecast error in real time (`net_target_kwh`, see [`Action`](#action--what-you-return-one-per-building)).
 
 `--days 7` takes about 20 seconds; drop it for the full month (a minute or
 two) once your agent works. The run **stops with an error** if your file does not load, claims a
@@ -149,6 +153,50 @@ print("default: ", base[base.participant.isin(mine)].total_cost.sum())
 
 In the baseline run each house is its own participant, named after the
 building. Run the same `--days` in both, or the comparison means nothing.
+
+To see what your agent did hour by hour — its trades, battery charge, grid
+imports and every bid it made as a price-time heatmap — plot the run:
+
+```bash
+python examples/hourly_trades.py --run results/team_yourname/balanced/competitive
+```
+
+and open `hourly_trades.html` in that folder. Your agent is starred in the
+selector and the page opens on it.
+
+### One player moves the market for everyone
+
+Prices are uniform: everyone who trades in an hour gets the same clearing
+price, and that price is the middle of the range of prices that trade the most
+energy. So a single participant's bids can move the price for the whole
+market. Two pre-generated pages show it on the full month, every other house
+running the default agent:
+
+- [docs/runs/all_default.html](docs/runs/all_default.html): all 20 houses on the default agent;
+- [docs/runs/market_player.html](docs/runs/market_player.html): house 199613
+  (storage-rich, 80 kWh, 1C) runs `_example_market_player.py` instead.
+
+Download them, or open them from your clone; GitHub does not render HTML
+pages. In the second, the selector opens on the player and its bid heatmap
+shows the strategy: cheap storage bids at $0.00–0.02, asks only in the top
+fifth of each peak.
+
+| full month, balanced | all default | with the market player | change |
+|---|---:|---:|---:|
+| the player's house | $403.31 | $369.51 | −$33.80 (−8.4%) |
+| clearing price in the hours it sold | 67% of grid | 90% of grid | |
+| the other nine storage-rich homes | $4,553 | $4,241 | −$312 |
+| the ten PV-rich homes | $5,768 | $6,120 | +$351 |
+| all 20 houses | $10,725 | $10,730 | +$6 |
+
+One house holding out for 80% of the grid price lifted the peak price for
+every seller in those hours, so the other storage owners gained ten times what
+the player did, without changing anything themselves. The PV-rich homes,
+buying at the peaks, paid for all of it. Physically almost nothing changed:
+curtailment, grid imports and traded volume each moved by less than 1%. Strategic
+pricing moved money between participants; it did not create any. Keep that in
+mind when you read your own result: your score depends on the others, and the
+others' bills depend on you.
 
 ---
 
@@ -362,7 +410,11 @@ One trap specific to this dataset: CityLearn's observations precede the
 physical step by one hour, so the PV you observe is not quite the PV you will
 produce. Selling exactly what you observed can leave you short, covering the
 gap from the grid at full price. `hourly_audit.csv` shows how much of what
-was sold was physically backed.
+was sold was physically backed. Dispatching with
+[`net_target_kwh`](#action--what-you-return-one-per-building) lets your battery
+absorb that error instead of the grid, as far as its power allows — the
+storage-rich homes almost entirely, the PV-rich homes' 1 kW battery only a
+little. Your bid still has to be right; the market price of a bad bid remains.
 
 ---
 
@@ -447,11 +499,24 @@ the array yourself instead — positive to buy, negative to sell.
 |---|---|---|
 | `hvac` | −1 … +1 | −1 full cooling, 0 off, +1 full heating |
 | `battery` | −1 … +1 | +1 charge at full power, −1 discharge at full power |
+| `net_target_kwh` | kWh, optional | the grid exchange you want this hour instead of a battery rate; see below |
 
-Both are **fractions of rated power, not amounts of energy** — the single most
-common source of a mismatch between what you bid and what you consume. Values
-are clipped, and the battery is additionally limited by its state of charge
-and remaining capacity.
+`hvac` and `battery` are **fractions of rated power, not amounts of energy** —
+the single most common source of a mismatch between what you bid and what you
+consume. Values are clipped, and the battery is additionally limited by its
+state of charge and remaining capacity.
+
+**`net_target_kwh` — let the battery follow the load.** A fixed `battery`
+rate is decided before the hour, against a load and PV you can only forecast.
+Set `net_target_kwh` instead — positive to draw that much from the market and
+grid, negative to deliver that much, typically what you cleared — and the
+battery behaves like a real home inverter: within the hour it charges whatever
+surplus would otherwise be curtailed and discharges whatever shortfall would
+otherwise come from the grid, so your meter reads the target. It is still
+limited by its power rating and charge, and whatever it cannot absorb goes to
+the grid or is curtailed as usual. `battery` is ignored when this is set. You
+learn nothing new from it: the battery reacts to the hour physically, your
+agent still never sees it. The default agent uses it.
 
 ---
 
@@ -467,6 +532,8 @@ Every run writes these to `results/<out>/balanced/competitive/`:
 | `buildings_hourly.csv` | per house per hour: owner, net energy, PV, battery, state of charge, indoor temperature, degree-hours, heat-pump draw |
 | `report.txt`, `leaderboard.csv`, `summary.json` | totals per participant and for the whole market |
 | `assignments.json` | who owned which house in this run |
+| `bids.csv` | every bid as submitted: participant, hour, price, kWh (+ buy, − sell) |
+| `hourly_trades.html` | written by `examples/hourly_trades.py`: the run hour by hour, with a selector per house |
 
 `results/<out>/comparison.txt` summarises every configuration and mode you ran.
 
@@ -576,7 +643,8 @@ scenarios/          the course-market recipe, pinned requirements, instructor gu
 generated/          the course market, built locally (not in Git)
 examples/           reports and experiments; original_submissions/ holds the original exercise's agents
 config/default.yaml the original exercise's config
-docs/               assignment.md, security.md, citylearn.md, original_exercise.md
+docs/               assignment.md, security.md, citylearn.md, original_exercise.md;
+                    runs/ holds the two pre-generated pages from the market-player example
 scripts/            scan_submissions.py -- the safety scan
 tests/              run python -m pytest to verify your checkout
 ```

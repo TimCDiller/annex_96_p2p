@@ -225,11 +225,21 @@ class _Guard:
         if isinstance(actions, dict):
             for name in participant.buildings:
                 candidate = actions.get(name)
+                if isinstance(candidate, dict):
+                    candidate = Action(hvac=float(candidate.get("hvac", 0.0)),
+                                       battery=float(candidate.get("battery", 0.0)),
+                                       net_target_kwh=candidate.get("net_target_kwh"))
                 if isinstance(candidate, Action):
-                    cleaned[name] = candidate
-                elif isinstance(candidate, dict):
-                    cleaned[name] = Action(hvac=float(candidate.get("hvac", 0.0)),
-                                           battery=float(candidate.get("battery", 0.0)))
+                    # An unusable target falls back to the plain battery rate.
+                    target = getattr(candidate, "net_target_kwh", None)
+                    try:
+                        target = None if target is None else float(target)
+                    except (TypeError, ValueError):
+                        target = None
+                    if target is not None and not np.isfinite(target):
+                        target = None
+                    cleaned[name] = Action(hvac=candidate.hvac, battery=candidate.battery,
+                                           net_target_kwh=target)
                 else:
                     cleaned[name] = Action()
         else:

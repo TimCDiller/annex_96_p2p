@@ -109,8 +109,13 @@ class StubBackend(Backend):
             batt = max(-1.0, min(1.0, float(a.battery or 0.0)))
 
             hp_kwh = abs(hvac) * s["hp_kw"]
+            target = getattr(a, "net_target_kwh", None)
             if s["battery_kwh"] > 0:
                 want = batt * s["battery_kw"]
+                if target is not None:
+                    # Balancing: absorb the gap between target and demand.
+                    gap = target - (self._load(i, t) + hp_kwh - self._solar(n, t))
+                    want = max(-s["battery_kw"], min(s["battery_kw"], gap))
                 if want >= 0:
                     moved = min(want, s["battery_kwh"] - self._soc[n])
                 else:

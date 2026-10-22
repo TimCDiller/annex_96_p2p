@@ -4,14 +4,19 @@
     python examples/hourly_trades.py --run results/price_variation/shifting_peaks
 
 Writes hourly_trades.html (self-contained, needs plotly), hourly_trades.png
-(matplotlib) and hourly_trades.csv into the run folder. The HTML has six panels:
+(matplotlib) and hourly_trades.csv into the run folder. The HTML has seven panels:
 peer-to-peer volume, prices, the clearing price as a percentage of the grid
 price, and -- for one selectable building or group -- its buy/sell bars, its
-battery state of charge, and its grid imports coloured by the grid price.
+battery state of charge, its bids as a price-time heatmap (from bids.csv,
+written by the course runner), and its grid imports coloured by the grid price.
 
 Trades are settled per participant, so a building's own trades are exact only
 when it is its own participant -- every house in an altered-stock
 `competitive` run. A participant owning several houses appears as one entry.
+Participants that ran their own agent rather than the default one
+(is_default is false in settlements.csv) are highlighted: marked with a star
+in the selector, which opens on them, split out in the top panel, and ringed
+in the price panels in the hours they sold.
 Altered-stock runs (they write buildings_hourly.csv) also get the
 generation_heavy (role pv) and storage_heavy (role storage) aggregates, and
 per-house battery state of charge; capacities come from the generated
@@ -26,7 +31,12 @@ import pandas as pd
 
 ROLE_GROUPS = {"pv": "generation_heavy", "storage": "storage_heavy"}
 BUY_COLOR, SELL_COLOR, SOC_COLOR = "#2a6fb0", "#c4472f", "#2e8b57"
+# Bid heatmap: green = willing to sell at that price, red = willing to buy.
+BID_SCALE = [[0.0, "#0b6b2e"], [0.25, "#7cc68f"], [0.5, "#ffffff"],
+             [0.75, "#f08a7e"], [1.0, "#a3121f"]]
+PRICE_STEP = 0.01
 PEAK_PRICE = 0.20     # $/kWh; the default agent's own definition of a peak hour
+PLAYER_COLORS = ["#8e44ad", "#d35400", "#16a085", "#b8860b"]
 
 
 def short(building):
@@ -34,8 +44,13 @@ def short(building):
 
 
 def selections(folder, ledger):
-    """[(label, participants)] for the building selector, groups first."""
+    """[(label, participants)] for the building selector, groups first.
+
+    Participants running their own agent come right after the groups, starred.
+    """
     owners = ledger.participant.unique().tolist()
+    players = (sorted(ledger.loc[~ledger.is_default.astype(bool), "participant"].unique())
+               if "is_default" in ledger else [])
     path = folder / "assignments.json"
     houses = (json.loads(path.read_text()) if path.exists()
               else {p: [p] for p in owners})
@@ -55,17 +70,49 @@ def selections(folder, ledger):
         if members:
             count = sum(len(houses.get(p, [p])) for p in members)
             options.append(("%s (%d houses)" % (group, count), members))
-    for p in sorted(owners, key=lambda p: (group_of(p) or "~", p)):
+    def label_of(p):
         own = houses.get(p, [p])
         tag = group_of(p) or ("mixed" if roles else "")
-        if len(own) == 1:
+        if p in players:
+            label = "★ %s — %s" % (p, ", ".join("house %s" % short(b) for b in own))
+        elif len(own) == 1:
             label = "house %s" % short(own[0])
             if p not in (own[0], "default_" + own[0]):
                 label += " — %s" % p
         else:
             label = "%s (%d houses)" % (p, len(own))
-        options.append((label + (" · %s" % tag if tag else ""), [p]))
-    return options, houses
+        return label + (" · %s" % tag if tag else "")
+
+    options += [(label_of(p), [p]) for p in players]
+    rest = [p for p in owners if p not in players]
+    options += [(label_of(p), [p]) for p in sorted(rest, key=lambda p: (group_of(p) or "~", p))]
+    return options, houses, players, label_of
+
+
+def bid_curves(folder, timesteps, participants):
+    """{participant: array[price level, hour]} of willingness to trade, or None.
+
+    Positive = kWh it would BUY at that price (its buy bids at that price or
+    dearer), negative = kWh it would SELL at that price (its asks at that price
+    or cheaper) -- the same cumulative curves the market clears on.
+    """
+    path = folder / "bids.csv"
+    if not path.exists():
+        return None, None
+    bids = pd.read_csv(path)
+    levels = int(round(bids.price.max() / PRICE_STEP)) + 1
+    column = {t: k for k, t in enumerate(timesteps)}
+    curves = {}
+    for name in participants:
+        raw = np.zeros((levels, len(timesteps)))
+        own = bids[bids.participant == name]
+        rows = np.rint(own.price.to_numpy() / PRICE_STEP).astype(int)
+        cols = own.timestep.map(column).to_numpy()
+        np.add.at(raw, (rows, cols), own.quantity_kwh.to_numpy())
+        buy = np.cumsum(np.clip(raw, 0, None)[::-1], axis=0)[::-1]
+        sell = np.cumsum(np.clip(-raw, 0, None), axis=0)
+        curves[name] = buy - sell
+    return curves, np.arange(levels) * PRICE_STEP
 
 
 def capacities(folder, dataset):
@@ -84,6 +131,10 @@ def main():
     parser.add_argument("--run", default="results/altered_stock/balanced/competitive")
     parser.add_argument("--dataset", help="generated dataset folder holding buildings.csv; "
                         "default generated/altered_stock/<configuration of the run>")
+    parser.add_argument("--plotlyjs", choices=["inline", "cdn"], default="inline",
+                        help="inline (default) works offline; cdn loads plotly from the web "
+                             "and makes the page about 4.5 MB smaller, for sharing")
+    parser.add_argument("--html", help="where to write the HTML; default <run>/hourly_trades.html")
     args = parser.parse_args()
     folder = Path(args.run)
     market = pd.read_csv(folder / "market.csv")
@@ -115,7 +166,8 @@ def main():
     imports = (ledger.pivot_table(index="timestep", columns="participant",
                                   values="grid_import_kwh", aggfunc="sum")
                .reindex(market.timestep).fillna(0.0))
-    options, houses = selections(folder, ledger)
+    options, houses, players, label_of = selections(folder, ledger)
+    first = len(options) - len(ledger.participant.unique()) if players else 0
     soc, capacity = None, capacities(folder, args.dataset)
     path = folder / "buildings_hourly.csv"
     if path.exists():
@@ -123,20 +175,37 @@ def main():
                .pivot_table(index="timestep", columns="building", values="battery_soc_kwh")
                .reindex(market.timestep))
     peak = (market.grid_import_price >= PEAK_PRICE).to_numpy()
+    curves, bid_prices = bid_curves(folder, market.timestep.tolist(),
+                                    ledger.participant.unique())
+    if curves is not None:
+        # Price levels above an hour's grid ceiling do not exist: leave blank.
+        above = bid_prices[:, None] > market.grid_import_price.to_numpy()[None, :] + 1e-9
 
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
-    fig = make_subplots(rows=6, cols=1, shared_xaxes=True, vertical_spacing=0.045,
-                        row_heights=[0.16, 0.15, 0.12, 0.21, 0.17, 0.19],
+    fig = make_subplots(rows=7, cols=1, shared_xaxes=True, vertical_spacing=0.04,
+                        row_heights=[0.13, 0.12, 0.10, 0.17, 0.13, 0.19, 0.16],
                         subplot_titles=("Energy sold to peers, whole market",
                                         "Grid price and clearing price",
                                         "Clearing price as % of grid price",
-                                        "Selection at left: bought from peers (up) and sold (down)",
+                                        "Selection: bought from peers (up) and sold (down)",
                                         "Selection: battery state of charge",
+                                        "Selection: bids \u2014 red = would buy at this price, "
+                                        "green = would sell, white = no trade",
                                         "Selection: grid import, coloured by grid price"))
-    fig.add_trace(go.Bar(x=market.timestep, y=market.sold_kwh,
-        name="Energy sold to peers", marker_color="#287c9b", customdata=custom,
-        hovertemplate="%{customdata[0]}<br>Sold: %{y:.2f} kWh<br>%{customdata[1]}<extra></extra>"), row=1, col=1)
+    player_sold = {p: (-position[p].clip(upper=0)).to_numpy() for p in players}
+    others = market.sold_kwh.to_numpy() - sum(player_sold.values(), np.zeros(len(market)))
+    custom = np.column_stack([labels, breakdown, market.sold_kwh])
+    fig.add_trace(go.Bar(x=market.timestep, y=others,
+        name="Energy sold to peers" + (" by everyone else" if players else ""),
+        marker_color="#287c9b", customdata=custom,
+        hovertemplate=("%{customdata[0]}<br>Sold, all sellers: %{customdata[2]:.2f} kWh"
+                       "<br>%{customdata[1]}<extra></extra>")), row=1, col=1)
+    for k, p in enumerate(players):
+        fig.add_trace(go.Bar(x=market.timestep, y=player_sold[p],
+            name="★ sold by %s" % p, marker_color=PLAYER_COLORS[k % len(PLAYER_COLORS)],
+            customdata=labels, hovertemplate=("%{customdata}<br>★ " + p +
+                                              ": %{y:.2f} kWh<extra></extra>")), row=1, col=1)
     fig.add_trace(go.Scatter(x=market.timestep, y=market.volume_kwh,
         name="Gross auction volume (before participant netting)", visible="legendonly",
         mode="lines", line=dict(color="#939393", dash="dot"),
@@ -155,11 +224,34 @@ def main():
         hovertemplate=("%{customdata[0]}<br>%{y:.1f}% of grid<br>"
                        "Trade $%{customdata[1]:.4f} / grid $%{customdata[2]:.4f}<extra></extra>")),
         row=3, col=1)
+    for k, p in enumerate(players):
+        when = player_sold[p] > 1e-6
+        color = PLAYER_COLORS[k % len(PLAYER_COLORS)]
+        for row, values in ((2, market.clearing_price), (3, market.pct_of_grid)):
+            fig.add_trace(go.Scatter(x=market.timestep[when], y=values[when], mode="markers",
+                name="★ hours %s sold" % p, legendgroup="ring-" + p, showlegend=(row == 2),
+                marker=dict(symbol="circle-open", size=11, color=color, line=dict(width=2)),
+                customdata=np.column_stack([np.array(labels)[when], player_sold[p][when],
+                                            market.pct_of_grid[when]]),
+                hovertemplate=("%{customdata[0]}<br>★ " + p + " sold %{customdata[1]:.2f} kWh"
+                               "<br>clearing at %{customdata[2]:.0f}% of grid<extra></extra>")),
+                row=row, col=1)
+    if curves is not None:
+        # Orientation for the bid heatmap: the ceiling and where the market cleared.
+        fig.add_trace(go.Scatter(x=market.timestep, y=market.grid_import_price, mode="lines",
+            name="Grid price (bid ceiling)", showlegend=False,
+            line=dict(color="#c17b17", width=1.2), hoverinfo="skip"), row=6, col=1)
+        fig.add_trace(go.Scatter(x=market.timestep, y=market.clearing_price.where(traded),
+            mode="markers", name="Clearing price", showlegend=False,
+            marker=dict(symbol="x-thin", size=6, line=dict(width=1.5, color="#222")),
+            hoverinfo="skip"), row=6, col=1)
     fixed = len(fig.data)
 
-    # Four traces per selector option (bought, sold, SOC, grid import); one set visible.
-    per_option = 4
-    bottom = fig.layout.yaxis6.domain
+    # Five traces per selector option (bought, sold, SOC, bids, grid import);
+    # one set visible.
+    per_option = 5
+    bottom = fig.layout.yaxis7.domain
+    heat = fig.layout.yaxis6.domain
     prices = market.grid_import_price
     for i, (label, members) in enumerate(options):
         net = position[members]
@@ -169,8 +261,8 @@ def main():
         for values, name, color in ((bought, "Bought from peers", BUY_COLOR),
                                     (sold_by, "Sold to peers", SELL_COLOR)):
             fig.add_trace(go.Bar(x=market.timestep, y=values, name=name,
-                marker_color=color, visible=(i == 0), legendgroup=name,
-                showlegend=(i == 0), customdata=hover,
+                marker_color=color, visible=(i == first), legendgroup=name,
+                showlegend=(i == first), customdata=hover,
                 hovertemplate=("%{customdata[0]}<br>" + label + "<br>" + name +
                                ": %{y:.2f} kWh<br>Clearing: $%{customdata[1]:.4f}/kWh"
                                "<extra></extra>")), row=4, col=1)
@@ -185,14 +277,32 @@ def main():
             level, unit = stored, " kWh"
         fig.add_trace(go.Scatter(x=market.timestep, y=level, mode="lines",
             name="Battery state of charge" + (" (%.0f kWh capacity)" % total_kwh if total_kwh else ""),
-            line=dict(color=SOC_COLOR, width=1.6), visible=(i == 0), showlegend=(i == 0),
+            line=dict(color=SOC_COLOR, width=1.6), visible=(i == first), showlegend=(i == first),
             customdata=np.column_stack([labels, stored]),
             hovertemplate=("%{customdata[0]}<br>" + label + "<br>SOC: %{y:.1f}" + unit +
                            " (%{customdata[1]:.1f} kWh)<extra></extra>")), row=5, col=1)
 
+        if curves is not None:
+            z = sum(curves[m] for m in members if m in curves)
+            z = np.where(above, np.nan, z).astype(np.float32)   # halves the file
+            nonzero = np.abs(z[np.isfinite(z) & (np.abs(z) > 1e-6)])
+            top = float(np.percentile(nonzero, 98)) if nonzero.size else 1.0
+            fig.add_trace(go.Heatmap(x=market.timestep, y=bid_prices, z=z,
+                zmin=-top, zmax=top, zmid=0, colorscale=BID_SCALE, hoverongaps=False,
+                visible=(i == first), showscale=True, name="Bids",
+                colorbar=dict(title=dict(text="kWh: sell (-) / buy (+)", side="right"),
+                              thickness=12, len=heat[1] - heat[0], y=heat[0],
+                              yanchor="bottom", x=1.01),
+                hovertemplate=("hour %{x}, $%{y:.2f}/kWh<br>" + label +
+                               "<br>%{z:+.1f} kWh  (+ would buy, - would sell)"
+                               "<extra></extra>")), row=6, col=1)
+        else:
+            fig.add_trace(go.Scatter(x=[], y=[], visible=(i == first), showlegend=False),
+                          row=6, col=1)
+
         drawn = imports[members].sum(axis=1).to_numpy()
         share = 100 * drawn[peak].sum() / drawn.sum() if drawn.sum() > 0 else 0.0
-        fig.add_trace(go.Bar(x=market.timestep, y=drawn, visible=(i == 0), showlegend=(i == 0),
+        fig.add_trace(go.Bar(x=market.timestep, y=drawn, visible=(i == first), showlegend=(i == first),
             name="Grid import: %.0f kWh, %.0f%% of it at peak prices (>= $%.2f)"
                  % (drawn.sum(), share, PEAK_PRICE),
             marker=dict(color=prices, colorscale="YlOrRd", cmin=prices.min(), cmax=prices.max(),
@@ -202,7 +312,7 @@ def main():
                                       x=1.01)),
             customdata=np.column_stack([labels, prices]),
             hovertemplate=("%{customdata[0]}<br>" + label + "<br>Grid import: %{y:.2f} kWh"
-                           " at $%{customdata[1]:.4f}/kWh<extra></extra>")), row=6, col=1)
+                           " at $%{customdata[1]:.4f}/kWh<extra></extra>")), row=7, col=1)
 
     def visibility(chosen):
         base = [trace.visible for trace in fig.data[:fixed]]
@@ -216,14 +326,14 @@ def main():
     choices = [("Full run", [-0.5, end]), ("First week", [-0.5, min(end, 167.5)])]
     choices += [("Day %d" % (d + 1), [d * 24 - 0.5, min(end, (d + 1) * 24 - 0.5)])
                 for d in sorted(market.day.unique())]
-    axes = ["xaxis.range"] + ["xaxis%d.range" % k for k in range(2, 7)]
+    axes = ["xaxis.range"] + ["xaxis%d.range" % k for k in range(2, 8)]
     days, hours = market.day.nunique(), len(market)
-    fig.update_layout(template="plotly_white", height=1900, barmode="relative",
+    fig.update_layout(template="plotly_white", height=2300, barmode="relative",
         title=dict(text="Hourly peer-to-peer trades and prices<br><sup>%s · %d participants · "
                         "%d hourly steps over %d days · click a legend item to toggle</sup>"
                         % (folder.as_posix(), ledger.participant.nunique(), hours, days), x=0.04),
         hovermode="x unified", bargap=0.08,
-        legend=dict(orientation="h", y=-0.05, x=0),
+        legend=dict(orientation="h", y=-0.04, x=0),
         margin=dict(l=75, r=90, t=130, b=130),
         updatemenus=[
             dict(buttons=[dict(label=label, method="relayout",
@@ -232,14 +342,14 @@ def main():
             dict(buttons=[dict(label=label, method="restyle",
                  args=[{"visible": visibility(i), "showlegend": legend(i)}])
                  for i, (label, _) in enumerate(options)],
-                 x=0, y=0, xanchor="left", yanchor="bottom", direction="down",
+                 active=first, x=0, y=0, xanchor="left", yanchor="bottom", direction="down",
                  pad=dict(t=0, b=4))])
     # Sit the building selector just above the bottom panel, left of its title.
     fig.layout.updatemenus[1].y = fig.layout.yaxis4.domain[1]
     ticks = np.arange(0, hours, 24)
     fig.update_xaxes(tickvals=ticks, ticktext=["Day %d" % (t // 24 + 1) for t in ticks],
                      range=[-0.5, end])
-    fig.update_xaxes(title_text="Simulation time (select a day above, or drag to zoom)", row=6, col=1)
+    fig.update_xaxes(title_text="Simulation time (select a day above, or drag to zoom)", row=7, col=1)
     fig.update_yaxes(title_text="Sold (kWh/h)", rangemode="tozero", row=1, col=1)
     fig.update_yaxes(title_text="Price ($/kWh)", rangemode="tozero", row=2, col=1)
     fig.update_yaxes(title_text="% of grid", range=[0, 105], row=3, col=1)
@@ -250,7 +360,9 @@ def main():
                      rangemode="tozero", row=5, col=1)
     if has_pct:
         fig.update_yaxes(range=[0, 102], row=5, col=1)
-    fig.update_yaxes(title_text="Grid import (kWh/h)", rangemode="tozero", row=6, col=1)
+    fig.update_yaxes(title_text="Bid price ($/kWh)", row=6, col=1,
+                     range=[0, float(market.grid_import_price.max()) + PRICE_STEP])
+    fig.update_yaxes(title_text="Grid import (kWh/h)", rangemode="tozero", row=7, col=1)
     fig.add_hline(y=100, line=dict(color="#c17b17", dash="dot", width=1), row=3, col=1)
 
     total = market.sold_kwh.sum()
@@ -261,15 +373,27 @@ def main():
                 "Volume-weighted trade price: $%.3f/kWh, which is %.1f%% of the grid price "
                 "in those same hours, weighted by traded volume ($%.3f/kWh).</p>" %
                 (total, traded.sum(), average, pct, grid_average))
+    if players:
+        subtitle += ("<p style=\"border-left:4px solid %s;padding-left:12px\"><b>Highlighted:</b> %s "
+                     "%s its own agent; every other house runs the default agent. "
+                     "The selector below opens on it.</p>" % (
+                         PLAYER_COLORS[0], ", ".join(label_of(p) for p in players),
+                         "runs" if len(players) == 1 else "each run"))
     groups = [label for label, _ in options[1:] if label.split(" ")[0] in ROLE_GROUPS.values()]
     note = ("<p>Top panel counts sellers' net settled sales once, not both buyer and seller. "
             "All trades within an hour receive the same clearing price; missing price markers "
             "mean no trade. Gross auction volume is available in the legend. Sales include "
             "grid-backed deliveries, not only household surplus.</p>"
-            "<p>Bottom three panels: choose the whole market, %s or a single participant from "
+            "<p>Bottom four panels: choose the whole market, %s or a single participant from "
             "the menu above them. Bars show settled peer-to-peer trades: up for energy bought, down "
             "for energy sold. Battery state of charge is after each hour's step; for a group it is "
-            "the group's stored energy over its total capacity. Grid imports are coloured by that "
+            "the group's stored energy over its total capacity. The bid heatmap shows, per hour "
+            "and price, how much the selection would buy (red) or sell (green) at that price: "
+            "a buy bid counts at its own price and every cheaper one, an ask at its own price "
+            "and every dearer one, exactly as the market adds them up; a group sums its "
+            "members. Above the orange line is blank because no bid can exceed the grid price; "
+            "crosses mark the clearing price; colours saturate at the 98th percentile. "
+            "Grid imports are coloured by that "
             "hour's grid price, and the legend gives the share imported at peak prices "
             "(&ge; $%.2f/kWh, the default agent's own peak threshold). Trades and imports are "
             "settled per participant, so a participant that owns several houses is shown as one "
@@ -278,10 +402,12 @@ def main():
              "" if groups else " This run has no generation/storage roles, so no group aggregates."
              if soc is not None else " This run has no generation/storage roles and records no "
              "per-house battery state, so no group aggregates and no SOC."))
-    plot = fig.to_html(full_html=False, include_plotlyjs=True,
+    plot = fig.to_html(full_html=False, include_plotlyjs=True if args.plotlyjs == "inline" else "cdn",
                        config={"displaylogo": False, "responsive": True,
                                "toImageButtonOptions": {"filename": "hourly_trades", "scale": 2}})
-    (folder / "hourly_trades.html").write_text(
+    html_path = Path(args.html) if args.html else folder / "hourly_trades.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(
         '<!doctype html><html><head><meta charset="utf-8"><title>Hourly electricity trades</title>'
         '<style>body{font:16px system-ui;margin:24px auto;max-width:1400px;color:#23303a}'
         'p{padding:0 24px;line-height:1.5}</style></head><body>' + subtitle + plot + note +
@@ -321,8 +447,9 @@ def main():
     plt.close(fig)
     print("Sold %.3f kWh in %d hours; weighted clearing $%.4f (%.1f%% of weighted grid $%.4f)" %
           (total, traded.sum(), average, pct, grid_average))
-    print("Selector:", ", ".join(label for label, _ in options[:4]), "... (%d entries)" % len(options))
-    print("Saved", folder / "hourly_trades.html")
+    shown = ", ".join(label for label, _ in options[:4 + len(players)])
+    print("Selector:", shown.encode("ascii", "replace").decode(), "... (%d entries)" % len(options))
+    print("Saved", html_path)
 
 
 if __name__ == "__main__":

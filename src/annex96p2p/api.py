@@ -128,10 +128,22 @@ class Action:
     Both are clipped to [-1, 1]. The battery is additionally limited by its
     state of charge and remaining capacity. A building with no battery
     ignores the battery command.
+
+    net_target_kwh   optional. Instead of a fixed battery rate, the grid
+              exchange you want for this building this hour: positive to
+              draw, negative to deliver -- typically what you bought or sold.
+              The battery then follows the load in real time, as a home
+              inverter does: it charges whatever surplus would otherwise be
+              lost and discharges whatever shortfall would otherwise come
+              from the grid, within its power and charge limits. Whatever it
+              cannot absorb goes to the grid or is curtailed as usual.
+              `battery` is ignored when this is set. You still do not see the
+              hour's load or PV -- the battery reacts to them physically.
     """
 
     hvac: float = 0.0
     battery: float = 0.0
+    net_target_kwh: Optional[float] = None
 
 
 # --------------------------------------------------------------------------
