@@ -159,6 +159,65 @@ def thresholds(folder, timesteps):
     return lines
 
 
+NIGHT_COLOR = "rgba(31, 58, 95, 0.08)"
+
+# Day-aligned ticks for whatever span is on screen: one per day across a long
+# span, then every 12, 6 and 3 hours as you zoom in, "Day N" at each midnight.
+# Plotly's own tick choice is not day-aligned on a numeric axis, so the ticks
+# are reset after every zoom; `x` is the simulation hour.
+TICKS_JS = """
+var gd = document.getElementById('{plot_id}');
+function dayTicks() {
+  var r = gd.layout.xaxis.range, span = r[1] - r[0];
+  var step = span > 240 ? 24 : span > 96 ? 12 : span > 48 ? 6 : 3;
+  var vals = [], text = [];
+  for (var t = Math.ceil(r[0] / step) * step; t <= r[1]; t += step) {
+    var h = ((t % 24) + 24) % 24;
+    vals.push(t);
+    text.push(h === 0 ? 'Day ' + (Math.floor(t / 24) + 1) : (h < 10 ? '0' : '') + h + ':00');
+  }
+  var update = {};
+  for (var k = 1; k <= 7; k++) {
+    var axis = k === 1 ? 'xaxis' : 'xaxis' + k;
+    update[axis + '.tickmode'] = 'array';
+    update[axis + '.tickvals'] = vals;
+    update[axis + '.ticktext'] = text;
+  }
+  Plotly.relayout(gd, update);
+}
+gd.on('plotly_relayout', function (e) {
+  if (Object.keys(e || {}).some(function (k) { return /range|autorange/.test(k); })) dayTicks();
+});
+dayTicks();
+"""
+
+
+def night_spans(folder, market):
+    """[(first, last)] simulation hours of each night, to shade.
+
+    Night is the hours of the day in which the houses' PV produced nothing on
+    average (under 2% of the midday peak) -- the run's own daylight, not a
+    clock. Without buildings_hourly.csv, 17:00-06:00.
+    """
+    path = folder / "buildings_hourly.csv"
+    if path.exists():
+        pv = pd.read_csv(path, usecols=["hour", "pv_kwh"]).groupby("hour").pv_kwh.mean()
+        dark = set(pv.index[pv < 0.02 * pv.max()]) if pv.max() > 0 else set(range(24))
+    else:
+        dark = set(range(17, 24)) | set(range(0, 7))
+    spans, start = [], None
+    steps = market.timestep.to_numpy()
+    for t, h in zip(steps, market.hour.to_numpy()):
+        if h in dark and start is None:
+            start = t
+        elif h not in dark and start is not None:
+            spans.append((start, t - 1))
+            start = None
+    if start is not None:
+        spans.append((start, steps[-1]))
+    return spans
+
+
 def capacities(folder, dataset):
     """Battery capacity (kWh) per building, or {} when the dataset is not found."""
     path = Path(dataset) if dataset else Path("generated/altered_stock") / folder.parent.name
@@ -410,6 +469,17 @@ def main():
     ticks = np.arange(0, hours, 24)
     fig.update_xaxes(tickvals=ticks, ticktext=["Day %d" % (t // 24 + 1) for t in ticks],
                      range=[-0.5, end])
+    # Shade the nights in every panel; over the bid heatmap, whose white cells
+    # would hide a shape drawn below it, the shade goes on top.
+    nights = night_spans(folder, market)
+    shapes = []
+    for row in range(1, 8):
+        suffix = "" if row == 1 else str(row)
+        for first, last in nights:
+            shapes.append(dict(type="rect", xref="x" + suffix, yref="y%s domain" % suffix,
+                               x0=first - 0.5, x1=last + 0.5, y0=0, y1=1, line_width=0,
+                               fillcolor=NIGHT_COLOR, layer="above" if row == 6 else "below"))
+    fig.update_layout(shapes=list(fig.layout.shapes) + shapes)
     fig.update_xaxes(title_text="Simulation time (select a day above, or drag to zoom)", row=7, col=1)
     fig.update_yaxes(title_text="Sold (kWh/h)", rangemode="tozero", row=1, col=1)
     fig.update_yaxes(title_text="Price ($/kWh)", rangemode="tozero", row=2, col=1)
@@ -449,7 +519,9 @@ def main():
                      "(agents/fields.py); the remaining houses run the default agent.</p>"
                      % (name, len(field)))
     groups = [label for label, _ in options[1:] if label.split(" ")[0] in ROLE_GROUPS.values()]
-    note = ("<p>Top panel counts sellers' net settled sales once, not both buyer and seller. "
+    note = ("<p>Shaded: night, the hours in which the houses' PV produced nothing on average. "
+            "The time axis marks each day, and every 12, 6 or 3 hours as you zoom in.</p>"
+            "<p>Top panel counts sellers' net settled sales once, not both buyer and seller. "
             "All trades within an hour receive the same clearing price; missing price markers "
             "mean no trade. Gross auction volume is available in the legend. Sales include "
             "grid-backed deliveries, not only household surplus.</p>"
@@ -476,7 +548,8 @@ def main():
              "per-house battery state, so no group aggregates and no SOC."))
     plot = fig.to_html(full_html=False, include_plotlyjs=True if args.plotlyjs == "inline" else "cdn",
                        config={"displaylogo": False, "responsive": True,
-                               "toImageButtonOptions": {"filename": "hourly_trades", "scale": 2}})
+                               "toImageButtonOptions": {"filename": "hourly_trades", "scale": 2}},
+                       post_script=TICKS_JS)
     html_path = Path(args.html) if args.html else folder / "hourly_trades.html"
     html_path.parent.mkdir(parents=True, exist_ok=True)
     html_path.write_text(
@@ -507,6 +580,9 @@ def main():
     axes[2].set_xlabel("Simulation day; each bar/marker represents one hour")
     axes[2].set_xticks(np.arange(1, days + 2))
     for ax in axes:
+        for first, last in nights:
+            ax.axvspan(1 + (first - 0.5) / 24, 1 + (last + 0.5) / 24,
+                       color="#1f3a5f", alpha=0.08, linewidth=0, zorder=0)
         ax.set_ylim(bottom=0)
         ax.set_xlim(0.7, days + 1)
         ax.grid(axis="y", alpha=0.2)
