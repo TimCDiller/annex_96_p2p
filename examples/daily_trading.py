@@ -26,12 +26,12 @@ from annex96p2p.runner import simulate
 
 def participants(backend, scenario):
     if scenario == "original":
-        parts, discovery = build_participants(backend, str(ROOT / "examples/original_submissions"),
+        parts, discovery = build_participants(backend, str(ROOT / "agents/basic/original_exercise"),
                                               conflict_policy="error")
         assert not discovery.skipped and not discovery.unknown_buildings, discovery.render()
         return parts
-    old, report = discover(ROOT / "examples/original_submissions", backend.building_names)
-    new, new_report = discover(ROOT / "examples/original_submissions/daily_trading", backend.building_names)
+    old, report = discover(ROOT / "agents/basic/original_exercise", backend.building_names)
+    new, new_report = discover(ROOT / "agents/basic/original_exercise/daily_trading", backend.building_names)
     assert not report.skipped and not report.unknown_buildings, report.render()
     assert len(new) == 4 and not new_report.skipped and not new_report.unknown_buildings, new_report.render()
     transferred = {b for p in new for b in p.buildings}

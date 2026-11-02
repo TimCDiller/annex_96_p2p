@@ -95,13 +95,19 @@ starting from one of three starting points:
 | file | what it is |
 |---|---|
 | [`submissions/_template.py`](submissions/_template.py) | inherits the default agent unchanged — the smallest legal submission |
-| [`submissions/_example_half_battery.py`](submissions/_example_half_battery.py) | a complete simple agent written out in full: holds its battery at 50%, sells surplus from 20% of the grid price, buys shortfall up to 80% |
-| [`submissions/_example_market_player.py`](submissions/_example_market_player.py) | the default agent's physical plan with different prices: buys energy for storage only at $0.02 or less, sells in the peaks only at 80% of the grid price or more — see [what it does to the market](#one-player-moves-the-market-for-everyone) |
+| [`agents/basic/half_battery.py`](agents/basic/half_battery.py) | a complete simple agent written out in full: holds its battery at 50%, sells surplus from 20% of the grid price, buys shortfall up to 80% |
+| [`agents/basic/market_player.py`](agents/basic/market_player.py) | the default agent's physical plan with different prices: buys energy for storage only at $0.02 or less, sells in the peaks only at 80% of the grid price or more — see [what it does to the market](#one-player-moves-the-market-for-everyone) |
 
 ```bash
-cp submissions/_template.py submissions/team_yourname.py
+cp submissions/_template.py submissions/team_yourname.py     # or one of the agents/basic/ files
 # set NAME and BUILDINGS to your Canvas assignment, then edit the agent
 ```
+
+Every agent in this repository is in [`agents/`](agents/): `basic/` holds the
+simple ones above, `advanced/` the stronger opponents described in
+[Choosing your opponents](#choosing-your-opponents-the-field). The one
+exception is the default agent, which the runner itself needs, in
+[stock_agents.py](src/annex96p2p/stock_agents.py).
 
 Files starting with `_` are ignored by the runner, which is why the
 starting points are never loaded themselves. It also makes `_scratch.py` a
@@ -130,6 +136,36 @@ Fix those before you look at any numbers.
 
 Results land in `results/team_yourname/balanced/competitive/`; see
 [Debugging your agent](#debugging-your-agent) for what each file is.
+
+### Choosing your opponents: the field
+
+By default every house you do not claim runs the default agent. **`--field`
+switches who runs them instead** — this is the one place to change it:
+
+```bash
+python -m annex96p2p.altered_stock run --configurations balanced --modes competitive \
+    --days 7 --submissions submissions --out results/team_yourname \
+    --field default        # default | basic | advanced | diverse
+```
+
+| `--field` | who runs the houses you do not claim |
+|---|---|
+| `default` | the default agent on every house — **the graded setting**, and what you get without `--field` |
+| `basic` | **simple opponents**: the default agent, [`half_battery`](agents/basic/half_battery.py) and [`market_player`](agents/basic/market_player.py), each on a third of the houses of every kind |
+| `advanced` | **complex opponents** on every house: *market forecast battery management*, *marginal value* and *team_opt_hp*, described in [agents/advanced/README.md](agents/advanced/README.md) |
+| `diverse` | simple and complex side by side, spread evenly over the kinds of house — the most varied market to test in |
+
+The fields are defined in [agents/fields.py](agents/fields.py). Houses you
+claim are taken out of the field, so you always play your own houses against
+whatever runs the rest. Copy a field there to build your own, and run it with
+`--field <its name>`. In the hourly page your participant is starred (★) and
+the field's agents are marked ◆; the advanced ones also draw their buying and
+selling thresholds on their bid panel.
+
+An agent that only beats the default agent has learned to beat the default
+agent. Test in more than one field before you trust a result — the
+[advanced agents' study](agents/advanced/README.md) shows strategies that win
+against default agents and lose, or stop mattering, against each other.
 
 ### Is it any good?
 
@@ -174,7 +210,7 @@ running the default agent:
 
 - [docs/runs/all_default.html](docs/runs/all_default.html): all 20 houses on the default agent;
 - [docs/runs/market_player.html](docs/runs/market_player.html): house 199613
-  (storage-rich, 80 kWh, 1C) runs `_example_market_player.py` instead.
+  (storage-rich, 80 kWh, 1C) runs [`market_player.py`](agents/basic/market_player.py) instead.
 
 Download them, or open them from your clone; GitHub does not render HTML
 pages. In the second, the selector opens on the player and its bid heatmap
@@ -401,7 +437,7 @@ AGENT = MyAgent
 
 That one is short to show the shape, and it has the classic bug: it bids
 its passive position, then runs the heat pump without having bought for it.
-[`_example_half_battery.py`](submissions/_example_half_battery.py) shows the
+[`half_battery.py`](agents/basic/half_battery.py) shows the
 fix — decide the heat pump and battery once, in `bid()`, and let `dispatch()`
 carry out the same plan. Call `Thermostat` once per hour only; it is a PI
 controller and remembers its past calls. It also blends each command with the
@@ -605,6 +641,18 @@ Rename the old one to start with `_`.
 limit somewhere in the run. `report.txt` is not written in that case; run
 your agent's methods on a single step in a script to find the exception.
 
+**The run dies with no Python error — "Windows fatal exception: access
+violation", exit code 3221225477 — and your agent uses `scipy.optimize`
+(`linprog`, `milp`).** SciPy's HiGHS solver crashes the process on Windows
+when it is called from a new short-lived thread each time, and older
+versions of the runner called every agent on a fresh thread each hour. It
+typically struck a few days into the run. The runner now keeps one worker
+thread per participant for the whole run, which fixes it with no change to
+your code; `tests/test_fields.py::test_highs_runs_on_one_thread_per_participant`
+checks it. If you still see it, update your checkout. To rule out your own
+code, run with `python -X faulthandler -m annex96p2p.altered_stock run ...`,
+which prints the Python stack of the thread that crashed.
+
 ---
 
 ## Before you hand in
@@ -642,13 +690,18 @@ src/annex96p2p/
   ledger.py         settlement, and the one table everything derives from
   runner.py         the simulation loop and the information firewall
   registry.py       finding submissions, resolving claims
+  fields.py         loads a field from agents/fields.py
   rc_thermal.py, rc_agents.py   optional RC thermal model and preheating agent
   baselines.py, reference.py, trading_agents.py   used by the original exercise
   backends/         the CityLearn adapter, and the interface it implements
-submissions/        test your agent here; _template.py and _example_half_battery.py to start from
+agents/             every agent you can play against or start from:
+  fields.py         the fields: who runs the houses you do not claim (--field)
+  basic/            half_battery.py, market_player.py; original_exercise/ holds the original exercise's agents
+  advanced/         market forecast battery management, marginal value, team_opt_hp, and their study
+submissions/        test your agent here; _template.py to start from
 scenarios/          the course-market recipe, pinned requirements, instructor guide, fitted RC models
 generated/          the course market, built locally (not in Git)
-examples/           reports and experiments; original_submissions/ holds the original exercise's agents
+examples/           reports and experiments (advanced_study.py: the advanced agents' study)
 config/default.yaml the original exercise's config
 docs/               assignment.md, security.md, citylearn.md, original_exercise.md;
                     runs/ holds the two pre-generated pages from the market-player example
@@ -720,7 +773,7 @@ described in the [student guide](scenarios/STUDENT_GUIDE.txt).
 The unaltered 25-home Vermont and Texas neighbourhoods, scored against
 `SimpleRBCAgent` with `python -m annex96p2p run`, are still in the repository
 for comparison: see [docs/original_exercise.md](docs/original_exercise.md).
-Its agents are in `examples/original_submissions/`, and
+Its agents are in `agents/basic/original_exercise/`, and
 `python examples/explain_market.py` walks one market clearing through in real
 numbers — useful in a first lecture whichever stock you use.
 

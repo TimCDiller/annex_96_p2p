@@ -2,7 +2,7 @@
 
 Copy it to start from it instead of the template:
 
-    cp submissions/_example_half_battery.py submissions/team_yourname.py
+    cp agents/basic/half_battery.py submissions/team_yourname.py
 
 Each hour, for every building:
 

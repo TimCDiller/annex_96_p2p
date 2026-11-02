@@ -22,7 +22,7 @@ citylearn_root: ../annex96_common_exercise_1
 citylearn_schema: ../annex96_common_exercise_1/data/datasets/annex96_ce1_vt_neighborhood/schema.json
 days:                      # blank = the dataset's full length
 
-submissions: examples/original_submissions
+submissions: agents/basic/original_exercise
 default_agent: rbc
 conflict_policy: first
 

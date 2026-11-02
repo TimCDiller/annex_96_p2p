@@ -40,7 +40,7 @@ One storage-rich home (house 199613) keeps the default agent's physical plan —
 same heating, same battery schedule — and changes only its prices: it buys
 energy for storage only at **$0.02/kWh or less**, and in the peaks sells only
 at **80% of the grid price or more**. (This is
-[`submissions/_example_market_player.py`](../../submissions/_example_market_player.py).)
+[`agents/basic/market_player.py`](../../agents/basic/market_player.py).)
 
 | | default | market player |
 |---|---:|---:|

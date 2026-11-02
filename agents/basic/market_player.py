@@ -2,7 +2,7 @@
 
 Copy it to start from it:
 
-    cp submissions/_example_market_player.py submissions/team_yourname.py
+    cp agents/basic/market_player.py submissions/team_yourname.py
 
 It runs exactly the default agent's physical plan -- same thermostat, same
 battery schedule, same grid top-ups before the peaks, same real-time

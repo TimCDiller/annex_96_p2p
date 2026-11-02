@@ -20,7 +20,7 @@ discover preheating and battery arbitrage here, before any market exists to
 distract them.
 
 **Lab 1 — the market appears.** Same buildings, but now `bid()` matters.
-`submissions/_example_half_battery.py` is a reasonable starting point: one
+`agents/basic/half_battery.py` is a reasonable starting point: one
 price level each way, at fixed fractions of the grid price. The lesson is the
 price grid, and that a bid is a reservation curve, not a quantity.
 

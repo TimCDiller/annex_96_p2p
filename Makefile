@@ -13,8 +13,12 @@ course-build:
 	python -m annex96p2p.altered_stock build
 
 # Your file(s) in submissions/, one week, the graded configuration.
+# FIELD picks who runs the other houses -- the switch between simple and
+# complex opponents: default (graded) | basic | advanced | diverse.
+#   make course-run FIELD=advanced
+FIELD ?= default
 course-run:
-	python -m annex96p2p.altered_stock run --configurations balanced --modes competitive --days 7 --submissions submissions --out results/course
+	python -m annex96p2p.altered_stock run --configurations balanced --modes competitive --days 7 --submissions submissions --out results/course --field $(FIELD)
 
 # Everyone's Canvas files in submissions/, full month. Scan first.
 class-run: scan
@@ -45,7 +49,7 @@ scan:
 docker-tournament:
 	docker build -t annex96 .
 	docker run --rm --network none --memory 4g --cpus 2 \
-	  -v "$$PWD/examples/original_submissions:/app/examples/original_submissions:ro" annex96 \
+	  -v "$$PWD/agents/basic/original_exercise:/app/agents/basic/original_exercise:ro" annex96 \
 	  python -m annex96p2p tournament --config config/default.yaml
 
 clean:

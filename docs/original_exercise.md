@@ -14,7 +14,7 @@ The bidding API, market rules and debugging guide in the README apply here
 unchanged. What differs is the building stock, the baseline agent, the runner
 (`python -m annex96p2p run` with `config/default.yaml`) and the scoring.
 The example agents for this exercise live in
-[`examples/original_submissions/`](../examples/original_submissions/), and
+[`agents/basic/original_exercise/`](../agents/basic/original_exercise/), and
 `config/default.yaml` points there.
 
 ## Quick start
@@ -60,9 +60,9 @@ Setup details and the things about this dataset that will surprise you are in
 Then:
 
 ```bash
-cp examples/original_submissions/example_team.py examples/original_submissions/team_yourname.py
+cp agents/basic/original_exercise/example_team.py agents/basic/original_exercise/team_yourname.py
 # edit BUILDINGS and the two methods
-python -m annex96p2p check examples/original_submissions/team_yourname.py
+python -m annex96p2p check agents/basic/original_exercise/team_yourname.py
 python -m annex96p2p run --config config/default.yaml
 ```
 
@@ -257,7 +257,7 @@ five teams. Pin it with the `assignments` block in
 
 ## Four additional two-house agents
 
-`examples/original_submissions/daily_trading/` contains two naive agents (idle storage and
+`agents/basic/original_exercise/daily_trading/` contains two naive agents (idle storage and
 clock-based storage) and two arbitrage agents (fixed price thresholds and
 thresholds learned from observed prices). Both arbitrage agents target 0.5 K
 above the lower comfort limit. This is a target, not a comfort guarantee.

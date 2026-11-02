@@ -7,6 +7,10 @@ course market (the altered Vermont winter stock, balanced configuration):
 
     python -m annex96p2p.altered_stock run --configurations balanced --modes competitive --days 7 --submissions submissions --out results/team_yourname
 
+Add --field basic, --field advanced or --field diverse to play the other
+houses against simple or complex opponents instead of the default agent
+(agents/fields.py; "Choosing your opponents" in the README).
+
 Files starting with "_" are ignored by the runner, which is why this one is not
 loaded. This folder is for testing on your own machine; hand in your file on
 Canvas. See "Testing your agent" and "Handing in" in the README.

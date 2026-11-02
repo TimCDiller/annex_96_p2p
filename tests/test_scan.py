@@ -68,7 +68,7 @@ def test_clean_submission_passes(tmp_path):
 
 
 def test_shipped_example_passes():
-    code, out = scan(ROOT / "examples/original_submissions")
+    code, out = scan(ROOT / "agents/basic/original_exercise")
     assert code == 0, out
 
 

@@ -7,7 +7,7 @@ What this package is
 --------------------
 This is a synthetic equipment variant of the original stock and the course
 default market. It leaves the original exercise (docs/original_exercise.md)
-and its agents in examples/original_submissions/ untouched. The recipe is altered_stock.yaml;
+and its agents in agents/basic/original_exercise/ untouched. The recipe is altered_stock.yaml;
 the implementation is annex96p2p.stock_dataset, stock_agents, and altered_stock.
 The data builder creates generated/altered_stock/ locally. That directory is
 ignored by Git; students generate it from a pinned upstream GitHub checkout.
@@ -103,7 +103,7 @@ It is a prepared workflow; local tests do not imply it has already run on GitHub
 Student submissions
 -------------------
 Students test in submissions/. Copy submissions/_template.py (or the fuller
-submissions/_example_half_battery.py) to submissions/team_alpha.py and set NAME
+agents/basic/half_battery.py) to submissions/team_alpha.py and set NAME
 and BUILDINGS to the instructor's assignment, which is posted on Canvas. Read
 generated/altered_stock/balanced/buildings.csv for actual IDs, roles,
 capacities and power ratings. Files starting with "_" are not loaded. Then run:

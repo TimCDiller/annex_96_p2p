@@ -21,6 +21,7 @@ is counted and reported, and the run continues.
 """
 from __future__ import annotations
 
+import queue
 import threading
 import time
 import traceback
@@ -70,6 +71,38 @@ class RunResult:
 TIMED_OUT = object()      # sentinel: the call did not finish in time
 
 
+class _Worker:
+    """One long-lived daemon thread that runs a participant's calls in turn.
+
+    Each participant's bid() and dispatch() run on the SAME thread all run
+    long, not on a fresh thread per call. That matters for native solvers:
+    SciPy's HiGHS (scipy.optimize.linprog, milp) crashed the whole process
+    with an access violation on Windows when called from a new short-lived
+    thread every hour -- typically within the first few hundred calls, i.e.
+    a few days into a run. From one persistent thread it is stable.
+    """
+
+    def __init__(self, name: str):
+        self._jobs: "queue.Queue" = queue.Queue()
+        threading.Thread(target=self._loop, daemon=True, name=name).start()
+
+    def _loop(self) -> None:
+        while True:
+            fn, args, box, done = self._jobs.get()
+            try:
+                box["value"] = fn(*args)
+            except BaseException as exc:       # noqa: BLE001
+                box["error"] = exc
+            done.set()
+
+    def run(self, fn, args, timeout: float):
+        """(finished, box): wait at most `timeout` seconds for fn(*args)."""
+        box: Dict[str, object] = {}
+        done = threading.Event()
+        self._jobs.put((fn, args, box, done))
+        return done.wait(timeout), box
+
+
 class _Guard:
     """Calls participant code and contains what it does wrong.
 
@@ -87,8 +120,10 @@ class _Guard:
 
     All three are counted and reported.
 
-    On the timeout mechanism: the call runs on a daemon thread which is
-    abandoned if it overruns. Python cannot kill a thread, so an abandoned
+    On the timeout mechanism: the call runs on the participant's worker, a
+    daemon thread kept for the whole run (see _Worker for why it is kept), and
+    a worker whose call overruns is abandoned -- the next call gets a fresh
+    one. Python cannot kill a thread, so an abandoned
     call keeps consuming CPU and intermittently holding the GIL -- the run
     degrades rather than hanging. That is why the per-run budget exists: it
     stops a spinning agent being re-invoked hundreds more times. For hard
@@ -102,6 +137,7 @@ class _Guard:
         self.run_budget_seconds = float(run_budget_seconds or 0.0)
         self._fallback = SimpleRBCAgent(name="__fallback__", buildings=[])
         self._reported = set()
+        self._workers: Dict[str, _Worker] = {}
 
     # ------------------------------------------------------------- reporting
     def _once(self, key, message: str) -> None:
@@ -153,22 +189,16 @@ class _Guard:
                 self._after(participant, what,
                             time.perf_counter() - started, timestep)
 
-        box: Dict[str, object] = {}
-
-        def target():
-            try:
-                box["value"] = fn(*args)
-            except BaseException as exc:       # noqa: BLE001
-                box["error"] = exc
-
-        thread = threading.Thread(target=target, daemon=True,
-                                  name="agent-%s-%s" % (participant.name, what))
-        thread.start()
-        thread.join(timeout)
+        worker = self._workers.get(participant.name)
+        if worker is None:
+            worker = self._workers[participant.name] = _Worker("agent-%s" % participant.name)
+        finished, box = worker.run(fn, args, timeout)
         elapsed = time.perf_counter() - started
         self._after(participant, what, elapsed, timestep)
 
-        if thread.is_alive():
+        if not finished:
+            # Still busy with the overrun call: leave it, start afresh next time.
+            del self._workers[participant.name]
             return TIMED_OUT
         if "error" in box:
             raise box["error"]                 # type: ignore[misc]

@@ -10,6 +10,7 @@ COPY config ./config
 COPY scripts ./scripts
 COPY tests ./tests
 COPY examples ./examples
+COPY agents ./agents
 
 # Submissions are mounted read-only at run time, not baked in:
 #   docker run --rm --network none --memory 2g --cpus 2 \

@@ -63,7 +63,7 @@ def collect(days):
                               delivery_adder=cfg.delivery_adder,
                               volatility=cfg.price_volatility, seed=cfg.seed,
                               export_price=cfg.export_price)
-    participants, report = build_participants(backend, str(ROOT / "examples/original_submissions"))
+    participants, report = build_participants(backend, str(ROOT / "agents/basic/original_exercise"))
     print(report.render() or "(no submissions found)")
 
     rec = []

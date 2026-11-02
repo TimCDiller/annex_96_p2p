@@ -16,7 +16,12 @@ when it is its own participant -- every house in an altered-stock
 Participants that ran their own agent rather than the default one
 (is_default is false in settlements.csv) are highlighted: marked with a star
 in the selector, which opens on them, split out in the top panel, and ringed
-in the price panels in the hours they sold.
+in the price panels in the hours they sold. In a run with a --field
+(participants.json says who is who) only the submissions are starred; the
+field's agents are marked with a diamond and listed right after them.
+Agents that log price thresholds in their offer_log (buy_below, sell_above,
+forecast_now -- the agents in agents/advanced/ do) get them drawn as
+lines on their bid panel, so each bid can be read against its reasoning.
 Altered-stock runs (they write buildings_hourly.csv) also get the
 generation_heavy (role pv) and storage_heavy (role storage) aggregates, and
 per-house battery state of charge; capacities come from the generated
@@ -51,6 +56,14 @@ def selections(folder, ledger):
     owners = ledger.participant.unique().tolist()
     players = (sorted(ledger.loc[~ledger.is_default.astype(bool), "participant"].unique())
                if "is_default" in ledger else [])
+    field = []
+    path = folder / "participants.json"
+    if path.exists():
+        # Runs with a --field: only submissions are players; the field's
+        # agents get their own marker and come right after them.
+        kinds = json.loads(path.read_text())["kinds"]
+        field = sorted(p for p in players if kinds.get(p) == "field")
+        players = [p for p in players if kinds.get(p) != "field"]
     path = folder / "assignments.json"
     houses = (json.loads(path.read_text()) if path.exists()
               else {p: [p] for p in owners})
@@ -75,6 +88,8 @@ def selections(folder, ledger):
         tag = group_of(p) or ("mixed" if roles else "")
         if p in players:
             label = "★ %s — %s" % (p, ", ".join("house %s" % short(b) for b in own))
+        elif p in field:
+            label = "◆ %s" % p if len(own) == 1 else "◆ %s (%d houses)" % (p, len(own))
         elif len(own) == 1:
             label = "house %s" % short(own[0])
             if p not in (own[0], "default_" + own[0]):
@@ -84,9 +99,10 @@ def selections(folder, ledger):
         return label + (" · %s" % tag if tag else "")
 
     options += [(label_of(p), [p]) for p in players]
-    rest = [p for p in owners if p not in players]
+    options += [(label_of(p), [p]) for p in sorted(field, key=lambda p: (group_of(p) or "~", p))]
+    rest = [p for p in owners if p not in players and p not in field]
     options += [(label_of(p), [p]) for p in sorted(rest, key=lambda p: (group_of(p) or "~", p))]
-    return options, houses, players, label_of
+    return options, houses, players, field, label_of
 
 
 def bid_curves(folder, timesteps, participants):
@@ -113,6 +129,34 @@ def bid_curves(folder, timesteps, participants):
         sell = np.cumsum(np.clip(-raw, 0, None), axis=0)
         curves[name] = buy - sell
     return curves, np.arange(levels) * PRICE_STEP
+
+
+THRESHOLDS = (("buy_below", "buys for storage below", "#a3121f", "dash"),
+              ("sell_above", "sells from storage above", "#0b6b2e", "dash"),
+              ("forecast_now", "its forecast of this hour's clearing price", "#555555", "dot"))
+
+
+def thresholds(folder, timesteps):
+    """{participant: {column: Series}} of the price lines an agent logged, or {}.
+
+    Agents that log `buy_below`, `sell_above` or `forecast_now` in their
+    offer_log (written to offers.csv by the course runner) get those drawn on
+    their bid panel. A participant with several houses shows the mean.
+    """
+    path = folder / "offers.csv"
+    if not path.exists():
+        return {}
+    offers = pd.read_csv(path)
+    columns = [c for c, *_ in THRESHOLDS if c in offers]
+    if not columns:
+        return {}
+    lines = {}
+    for name, own in offers.groupby("participant"):
+        means = own.groupby("timestep")[columns].mean().reindex(timesteps)
+        kept = {c: means[c] for c in columns if means[c].notna().any()}
+        if kept:
+            lines[name] = kept
+    return lines
 
 
 def capacities(folder, dataset):
@@ -166,7 +210,7 @@ def main():
     imports = (ledger.pivot_table(index="timestep", columns="participant",
                                   values="grid_import_kwh", aggfunc="sum")
                .reindex(market.timestep).fillna(0.0))
-    options, houses, players, label_of = selections(folder, ledger)
+    options, houses, players, field, label_of = selections(folder, ledger)
     first = len(options) - len(ledger.participant.unique()) if players else 0
     soc, capacity = None, capacities(folder, args.dataset)
     path = folder / "buildings_hourly.csv"
@@ -177,6 +221,7 @@ def main():
     peak = (market.grid_import_price >= PEAK_PRICE).to_numpy()
     curves, bid_prices = bid_curves(folder, market.timestep.tolist(),
                                     ledger.participant.unique())
+    lines = thresholds(folder, market.timestep)
     if curves is not None:
         # Price levels above an hour's grid ceiling do not exist: leave blank.
         above = bid_prices[:, None] > market.grid_import_price.to_numpy()[None, :] + 1e-9
@@ -247,9 +292,9 @@ def main():
             hoverinfo="skip"), row=6, col=1)
     fixed = len(fig.data)
 
-    # Five traces per selector option (bought, sold, SOC, bids, grid import);
-    # one set visible.
-    per_option = 5
+    # Eight traces per selector option (bought, sold, SOC, bids, grid import,
+    # and the three threshold lines of an agent that logs them); one set visible.
+    per_option = 5 + len(THRESHOLDS)
     bottom = fig.layout.yaxis7.domain
     heat = fig.layout.yaxis6.domain
     prices = market.grid_import_price
@@ -314,13 +359,29 @@ def main():
             hovertemplate=("%{customdata[0]}<br>" + label + "<br>Grid import: %{y:.2f} kWh"
                            " at $%{customdata[1]:.4f}/kWh<extra></extra>")), row=7, col=1)
 
+        own = lines.get(members[0], {}) if len(members) == 1 else {}
+        for column, name, color, dash in THRESHOLDS:
+            values = own.get(column)
+            fig.add_trace(go.Scatter(
+                x=market.timestep if values is not None else [],
+                y=values if values is not None else [], mode="lines",
+                name="Agent " + name, visible=(i == first),
+                showlegend=(i == first and values is not None),
+                line=dict(color=color, width=1.3, dash=dash), connectgaps=False,
+                customdata=labels,
+                hovertemplate=("%{customdata}<br>" + label + "<br>" + name +
+                               ": $%{y:.3f}/kWh<extra></extra>")), row=6, col=1)
+
     def visibility(chosen):
         base = [trace.visible for trace in fig.data[:fixed]]
         return base + [j == chosen for j in range(len(options)) for _ in range(per_option)]
 
     def legend(chosen):
+        # An option's empty traces (no threshold lines logged) stay out of the legend.
         return [trace.showlegend for trace in fig.data[:fixed]] + \
-               [j == chosen for j in range(len(options)) for _ in range(per_option)]
+               [j == chosen and len(trace.y if trace.y is not None else ()) > 0
+                for j in range(len(options))
+                for trace in fig.data[fixed + j * per_option: fixed + (j + 1) * per_option]]
 
     end = int(market.timestep.max()) + 0.5
     choices = [("Full run", [-0.5, end]), ("First week", [-0.5, min(end, 167.5)])]
@@ -375,10 +436,18 @@ def main():
                 (total, traded.sum(), average, pct, grid_average))
     if players:
         subtitle += ("<p style=\"border-left:4px solid %s;padding-left:12px\"><b>Highlighted:</b> %s "
-                     "%s its own agent; every other house runs the default agent. "
+                     "%s its own agent; %s. "
                      "The selector below opens on it.</p>" % (
                          PLAYER_COLORS[0], ", ".join(label_of(p) for p in players),
-                         "runs" if len(players) == 1 else "each run"))
+                         "runs" if len(players) == 1 else "each run",
+                         "the field runs the rest" if field else
+                         "every other house runs the default agent"))
+    if field:
+        path = folder / "participants.json"
+        name = json.loads(path.read_text())["field"]
+        subtitle += ("<p><b>Field: %s.</b> %d participants marked &#9670; run the field's agents "
+                     "(agents/fields.py); the remaining houses run the default agent.</p>"
+                     % (name, len(field)))
     groups = [label for label, _ in options[1:] if label.split(" ")[0] in ROLE_GROUPS.values()]
     note = ("<p>Top panel counts sellers' net settled sales once, not both buyer and seller. "
             "All trades within an hour receive the same clearing price; missing price markers "
@@ -393,6 +462,9 @@ def main():
             "and every dearer one, exactly as the market adds them up; a group sums its "
             "members. Above the orange line is blank because no bid can exceed the grid price; "
             "crosses mark the clearing price; colours saturate at the 98th percentile. "
+            "For an agent that logs them, dashed lines mark the price below which it buys "
+            "for storage (red) and above which it sells from storage (green), and a dotted "
+            "line its forecast of the clearing price. "
             "Grid imports are coloured by that "
             "hour's grid price, and the legend gives the share imported at peak prices "
             "(&ge; $%.2f/kWh, the default agent's own peak threshold). Trades and imports are "

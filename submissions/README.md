@@ -4,10 +4,11 @@ This folder is where you **test** your agent on your own machine. It is not
 how you hand in: **hand-ins happen on Canvas**.
 
 ```bash
-cp submissions/_template.py submissions/team_yourname.py      # or one of the _example_ files
+cp submissions/_template.py submissions/team_yourname.py      # or a file from agents/basic/
 # set NAME and BUILDINGS to your Canvas assignment, then edit the agent
 python -m annex96p2p.altered_stock run --configurations balanced --modes competitive \
-    --days 7 --submissions submissions --out results/team_yourname
+    --days 7 --submissions submissions --out results/team_yourname \
+    --field default        # who runs the other houses: default | basic | advanced | diverse
 ```
 
 Run from the repository root, after the one-time setup in
@@ -16,17 +17,18 @@ Run from the repository root, after the one-time setup in
 | file | what it is |
 |---|---|
 | `_template.py` | inherits the default agent unchanged — the smallest legal submission |
-| `_example_half_battery.py` | a complete simple agent: battery held at 50%, surplus sold from 20% of the grid price, shortfall bought up to 80% |
-| `_example_market_player.py` | the default agent's physical plan with strategic prices: buys for storage only at $0.02 or less, sells at peak only at 80% of the grid price or more ([what it does to the market](../README.md#one-player-moves-the-market-for-everyone)) |
+| [`../agents/basic/half_battery.py`](../agents/basic/half_battery.py) | a complete simple agent: battery held at 50%, surplus sold from 20% of the grid price, shortfall bought up to 80% |
+| [`../agents/basic/market_player.py`](../agents/basic/market_player.py) | the default agent's physical plan with strategic prices: buys for storage only at $0.02 or less, sells at peak only at 80% of the grid price or more ([what it does to the market](../README.md#one-player-moves-the-market-for-everyone)) |
 
-Files starting with `_` are not loaded, so neither of these takes part in
+Files starting with `_` are not loaded, so the template takes no part in
 your runs, and `_scratch.py` is a safe place to experiment. Keep only one
 loaded copy of your own agent here: two files claiming the same buildings
 stop the run.
 
 Every house nobody claims is run by the default agent, one participant per
 house, so your market is full of counterparties even when yours is the only
-file in this folder.
+file in this folder. `--field` puts simple or complex opponents on those
+houses instead: see [Choosing your opponents](../README.md#choosing-your-opponents-the-field).
 
 **The rules, the full API, the debugging guide and the hand-in checklist live
 in [the main README](../README.md)** — one copy, so it cannot drift:

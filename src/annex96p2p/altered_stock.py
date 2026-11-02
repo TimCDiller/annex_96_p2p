@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .backends.citylearn_backend import CityLearnBackend
+from .fields import DEFAULT_FIELD, field_participants
 from .registry import Participant, discover
 from .report import save
 from .runner import simulate
@@ -21,9 +22,17 @@ MODES = ("competitive", "pv_honest", "pv_withhold", "storage_honest",
          "storage_withhold", "storage_flood", "rc_preheat", "rc_no_preheat")
 
 
-def make_participants(manifest, mode, submissions=None, rc_models=None, price_shape=None):
+def make_participants(manifest, mode, submissions=None, rc_models=None, price_shape=None,
+                      field=DEFAULT_FIELD, agents_dir="agents"):
+    """Everyone in the market: the dominant owner (in the matched modes), the
+    submissions, then the field on what is left, then the default agent.
+
+    `field` names an entry of <agents_dir>/fields.py; "default" adds no one.
+    """
     if mode not in MODES:
         raise ValueError("Unknown mode: " + mode)
+    if field != DEFAULT_FIELD and mode != "competitive":
+        raise ValueError("--field applies to mode competitive only, not " + mode)
     selected = []
     if mode not in ("competitive", "rc_preheat", "rc_no_preheat"):
         role, behavior = mode.split("_", 1)
@@ -49,6 +58,14 @@ def make_participants(manifest, mode, submissions=None, rc_models=None, price_sh
             seen_names.add(p.name)
             used.update(p.buildings)
             parts.append(p)
+    if field != DEFAULT_FIELD:
+        names = {p.name for p in parts}
+        for p in field_participants(agents_dir, field, manifest.building.tolist(), used):
+            if p.name in names:
+                raise ValueError("A submission and the field are both called " + p.name)
+            p.kind = "field"
+            used.update(p.buildings)
+            parts.append(p)
     for name in manifest.building:
         if name not in used:
             agent = (RCPreheatAgent(name, [name], rc_models, price_shape,
@@ -61,7 +78,8 @@ def make_participants(manifest, mode, submissions=None, rc_models=None, price_sh
     return parts
 
 
-def run(backend, folder, mode, out, submissions=None, rc_model_path=None):
+def run(backend, folder, mode, out, submissions=None, rc_model_path=None,
+        field=DEFAULT_FIELD, agents_dir="agents"):
     provenance = verify(folder)
     manifest = pd.read_csv(folder / "buildings.csv")
     tariff = Tariff.from_csv(str(folder / "duck_prices.csv"),
@@ -69,7 +87,8 @@ def run(backend, folder, mode, out, submissions=None, rc_model_path=None):
     models = (load_models(rc_model_path, folder/"schema.json")
               if mode in ("rc_preheat", "rc_no_preheat") else None)
     recipe = provenance["recipe"]
-    parts = make_participants(manifest, mode, submissions, models, recipe["duck_prices"])
+    parts = make_participants(manifest, mode, submissions, models, recipe["duck_prices"],
+                              field, agents_dir)
     by_name = manifest.set_index("building")
     records = []
     bid_rows = []
@@ -105,6 +124,10 @@ def run(backend, folder, mode, out, submissions=None, rc_model_path=None):
     raw = pd.DataFrame(records)
     raw.to_csv(out / "buildings_hourly.csv", index=False)
     (out / "assignments.json").write_text(json.dumps({p.name:p.buildings for p in parts}, indent=2))
+    # Who is who, for the hourly page: a submission, the field, or the default agent.
+    kinds = {p.name: ("default" if p.is_default else getattr(p, "kind", "submission"))
+             for p in parts}
+    (out / "participants.json").write_text(json.dumps(dict(field=field, kinds=kinds), indent=2))
     bids = []
     for p in parts:
         if hasattr(p.agent, "offer_log"):
@@ -206,6 +229,11 @@ def main():
     run_p.add_argument("--modes", nargs="+", choices=MODES, default=list(MODES[:-1]))
     run_p.add_argument("--days", type=int)
     run_p.add_argument("--submissions")
+    run_p.add_argument("--field", default=DEFAULT_FIELD,
+                       help="who runs the houses no submission claims: default (the "
+                            "default agent everywhere; graded), basic, advanced, diverse "
+                            "-- defined in <agents>/fields.py")
+    run_p.add_argument("--agents", default="agents", help="folder holding fields.py")
     run_p.add_argument("--out", default="results/altered_stock")
     run_p.add_argument("--rc-models", default="scenarios/rc_models")
     args = parser.parse_args()
@@ -225,7 +253,8 @@ def main():
             print("Starting", cfg, mode, "steps", backend.n_timesteps, flush=True)
             rc_path = (Path(args.rc_models)/(cfg+".json")
                        if mode in ("rc_preheat", "rc_no_preheat") else None)
-            summary = run(backend, folder, mode, out/cfg/mode, args.submissions, rc_path)
+            summary = run(backend, folder, mode, out/cfg/mode, args.submissions, rc_path,
+                          args.field, args.agents)
             print(cfg, mode, json.dumps(summary), flush=True)
             compare(out)
     print("Results:", out, flush=True)

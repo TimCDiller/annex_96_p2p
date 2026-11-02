@@ -6,7 +6,7 @@ its bid/dispatch structure carries over unchanged, its BUILDINGS do not.
 
 To run it in the original exercise, alongside the other files in this folder:
 
-    python -m annex96p2p check examples/original_submissions/example_team.py
+    python -m annex96p2p check agents/basic/original_exercise/example_team.py
     python -m annex96p2p run --config config/default.yaml
 
 Every building you do not claim is run by the built-in default agent, so you
