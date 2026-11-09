@@ -18,6 +18,17 @@ maximises the traded volume.
   volume(p)  = min(demand(p), supply(p))
   p*         = the price maximising volume(p)
 
+Often several prices trade the same, maximal volume -- the bids are steps, so
+the curves overlap along a stretch rather than crossing at a point. Ties are
+broken the way exchanges break them:
+
+  1. most volume;
+  2. then the smallest imbalance |demand(p) - supply(p)|, i.e. the price
+     closest to where the two curves cross. When supply is short this moves
+     the price up the tied range, when demand is short down it: excess demand
+     pushes the price up, excess supply pulls it down;
+  3. then, if still tied, the middle price.
+
 Everyone who is "in the money" at p* trades at p*, regardless of what they
 bid. The short side of the market is filled completely, and the long side is
 rationed pro rata. That guarantees the market balances exactly:
@@ -137,9 +148,11 @@ def clear(bids: Dict[str, np.ndarray], price_grid: np.ndarray) -> Clearing:
         return Clearing(None, 0.0, {k: 0.0 for k in names}, price_grid,
                         demand, supply)
 
-    # Several prices can maximise volume. Take the middle one, which splits
-    # the surplus between buyers and sellers instead of favouring one side.
+    # Several prices can maximise volume. Take the one where demand and supply
+    # are closest -- nearest the crossing -- and the middle of any remaining tie.
     tied = np.flatnonzero(volume >= best - TOL)
+    gap = np.abs(demand[tied] - supply[tied])
+    tied = tied[gap <= gap.min() + TOL]
     j = int(tied[len(tied) // 2])
 
     total_buy = float(demand[j])

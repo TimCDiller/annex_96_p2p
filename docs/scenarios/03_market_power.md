@@ -2,8 +2,10 @@
 
 [← gallery](README.md)
 
-The market clears at **one price per hour**: the middle of the range of prices
-that trade the most energy. Everyone who trades in that hour gets that price.
+The market clears at **one price per hour**: of the prices that trade the most
+energy, the one where demand and supply are closest — so excess demand pushes
+it up that range, excess supply down. Everyone who trades in that hour gets
+that price.
 Two things follow, and every scenario below is an illustration of them:
 
 - **A bid can move the price for everyone.** Raise your ask and, if it still
@@ -23,14 +25,14 @@ All numbers: full month, compared with every house on the default agent.
 
 | scenario | PV-rich homes | storage-rich homes | all 20 houses |
 |---|---:|---:|---:|
-| everyone on the default agent | $5,706 | $4,141 | $9,846 |
-| one market player | +$424 | −$415 | +$9 |
+| everyone on the default agent | $5,705 | $4,141 | $9,846 |
+| one market player | +$217 | −$208 | +$9 |
 | fixed cartel | −$1,111 | +$1,115 | +$4 |
-| learning cartel | −$1,226 | +$1,253 | +$27 |
-| cartel with a cheater | −$1,111 | +$1,115 | +$4 |
-| hardliners only | +$1,154 | −$1,090 | +$64 |
+| learning cartel | −$1,212 | +$1,239 | +$27 |
+| cartel with a cheater | −$1,103 | +$1,107 | +$4 |
+| hardliners only | +$1,113 | −$1,049 | +$64 |
 | fixed cartel vs hardliners | +$891 | +$825 | **+$1,716** |
-| learning cartel vs hardliners | +$610 | +$16 | **+$626** |
+| learning cartel vs hardliners | +$611 | +$15 | **+$626** |
 
 ---
 
@@ -44,13 +46,13 @@ at **80% of the grid price or more**. (This is
 
 | | default | market player |
 |---|---:|---:|
-| the player's house | $420.33 | **$388.88 (−7.5%)** |
+| the player's house | $420.33 | **$393.89 (−6.3%)** |
 | clearing price in the hours it sold | 66% of grid | **90% of grid** |
-| the other nine storage-rich homes | $3,721 | $3,337 (−$383) |
-| the ten PV-rich homes | $5,706 | $6,130 (+$424) |
+| the other nine storage-rich homes | $3,721 | $3,539 (−$181) |
+| the ten PV-rich homes | $5,705 | $5,923 (+$217) |
 
 Its high asks still cleared, and lifted the peak price for every seller. The
-other storage owners gained more than ten times what the player did, without
+other storage owners gained nearly seven times what the player did, without
 changing anything; the PV-rich homes, buying at the peak, paid for it.
 Interactive: [`../runs/market_player.html`](../runs/market_player.html).
 
@@ -65,12 +67,12 @@ All ten PV-rich homes agree on two rules and otherwise keep the default plan:
 
 | full month | default | selling rule only | buying rule only | **both (cartel)** |
 |---|---:|---:|---:|---:|
-| PV-rich homes | $5,706 | $5,210 | $5,095 | **$4,594 (−19.5%)** |
-| storage-rich homes | $4,141 | $4,636 | $4,756 | **$5,256 (+27%)** |
-| price for their surplus | 7.0¢ | 10.4¢ | 6.9¢ | 10.4¢ |
+| PV-rich homes | $5,705 | $5,206 | $5,074 | **$4,594 (−19.5%)** |
+| storage-rich homes | $4,141 | $4,640 | $4,777 | **$5,256 (+27%)** |
+| price for their surplus | 7.0¢ | 10.4¢ | 7.1¢ | 10.4¢ |
 | price they pay peers at peak | 21.5¢ | 21.5¢ | 13.4¢ | 13.4¢ |
-| midday / peak clearing price, % of grid | 58 / 67 | 91 / 71 | 58 / 49 | 91 / 53 |
-| energy shed | 3,092 kWh | 3,092 | 3,088 | 3,089 |
+| midday / peak clearing price, % of grid | 58 / 67 | 91 / 71 | 59 / 51 | 91 / 54 |
+| energy shed | 3,098 kWh | 3,098 | 3,094 | 3,095 |
 
 It works because the storage-rich homes never push back: their default agent
 pays up to the grid price and sells for anything above $0.10. Nothing extra is
@@ -82,12 +84,12 @@ because nobody calls it. Interactive: [`pages/pv_cartel.html`](pages/pv_cartel.h
 ## Hardliners: storage owners who call bluffs
 
 Here all ten storage-rich homes run the market player above. Against the
-default PV-rich homes that alone moves $1,090 to the storage side. Against
+default PV-rich homes that alone moves $1,049 to the storage side. Against
 the **fixed cartel**, both sides hold out:
 
 - not one kWh is traded between peers in the peaks — the cartel will not pay
   more than 50%, the hardliners will not sell below 80%;
-- 7,049 kWh is shed instead of 3,092;
+- 7,049 kWh is shed instead of 3,098;
 - **the whole market pays $1,716 a month more** — both groups lose.
 
 Two rigid strategies meeting each other destroy value. Interactive:
@@ -114,10 +116,10 @@ for all hours gets dragged by whichever hour pushes back most often.
 
 | full month | PV-rich homes | storage-rich homes | all 20 |
 |---|---:|---:|---:|
-| learning cartel vs default storage owners | **$4,479** | $5,394 | $9,873 |
-| learning cartel vs hardliners | $6,315 | $4,157 | **$10,472** |
+| learning cartel vs default storage owners | **$4,493** | $5,380 | $9,873 |
+| learning cartel vs hardliners | $6,317 | $4,156 | **$10,472** |
 | *for comparison:* fixed cartel vs hardliners | $6,596 | $4,966 | $11,563 |
-| *for comparison:* hardliners vs default PV homes | $6,860 | $3,051 | $9,911 |
+| *for comparison:* hardliners vs default PV homes | $6,819 | $3,092 | $9,911 |
 
 - **Against the default storage owners it gets bold** and beats the fixed
   cartel: it sells midday surplus at about 99% of the grid price and bids only
@@ -126,7 +128,7 @@ for all hours gets dragged by whichever hour pushes back most often.
 - **Against the hardliners it backs off** where they push back: its evening
   cap rises from 50% to about 80% within a week, and trade resumes. It cuts
   the standoff's loss from $1,716 to $626 a month, and still leaves the PV-rich
-  homes $545 better off than not forming a cartel at all.
+  homes $502 better off than not forming a cartel at all.
 
 Interactive: [`pages/learning_cartel.html`](pages/learning_cartel.html) and
 [`pages/learning_vs_hardliners.html`](pages/learning_vs_hardliners.html).
@@ -139,17 +141,30 @@ cap.
 
 | house 112208, full month | loyal member | cheater |
 |---|---:|---:|
-| in the fixed cartel | $478.2 | $478.3 |
-| in the learning cartel | $469.6 | $465.7 |
+| in the fixed cartel | $478.2 | $474.4 |
+| in the learning cartel | $470.4 | $464.9 |
 
-**Cheating earns nothing**, and the rest of the cartel does not notice. With a
-uniform price at the middle of the range, an ask one cent below the others does
-not move that range: the price still lands around 90% of the grid price, above
-*both* asks, so the cheater and the loyal members are equally in the money and
-share any rationing pro rata. Undercutting only buys priority if the cheater
-could cover the whole demand alone. In a *pay-as-bid* market, where each seller
-is paid its own ask, the same cheater would sell first and the cartel would
-erode.
+**Cheating earns a little, and the loyal members pay for it.** The two halves
+of the cheat work very differently:
+
+- **Undercutting the floor does nothing.** At midday supply is plentiful, the
+  price still lands around 90% of the grid price, above *both* asks, so the
+  cheater and the loyal members are equally in the money and share any
+  rationing pro rata. Undercutting only buys priority if the cheater could
+  cover the whole demand alone.
+- **Outbidding the cap at the peak pays.** There supply is short, and the
+  market takes the price nearest where demand and supply cross — the highest
+  bid still in. In 16 peak hours of the month that was the cheater's: the
+  price rose for every cartel member who bought (once from 16¢ to 23¢), and the
+  cheater, the only one bidding that much, was served first. It bought 26 kWh
+  more from peers instead of the grid and saved $3.84; the nine loyal members
+  paid $12.55 more. In the learning cartel the cheater saves $5.54 and the
+  loyal members lose $34.72.
+
+Small sums, but the lesson is that a cartel member breaking ranks costs the
+cartel more than it earns the cheater. In a *pay-as-bid* market, where each
+seller is paid its own ask, undercutting would pay as well — the cheater would
+sell first — and the cartel would erode faster.
 
 ## Try it yourself
 
@@ -157,6 +172,7 @@ erode.
   would you keep if the storage owners started calling bluffs?
 - Make the storage-rich homes learn as well. Does the market settle somewhere,
   or cycle?
-- Design a cheater that *does* gain. What would it have to do differently?
+- The cheater gains by outbidding the cap at the peak. What happens to the
+  cartel if every member does it?
 - Is any of this legal in a real electricity market? Which scenarios would a
   regulator call collusion, and how would they detect it from the bids?

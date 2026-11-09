@@ -203,9 +203,10 @@ selector and the page opens on it.
 ### One player moves the market for everyone
 
 Prices are uniform: everyone who trades in an hour gets the same clearing
-price, and that price is the middle of the range of prices that trade the most
-energy. So a single participant's bids can move the price for the whole
-market. Two pre-generated pages show it on the full month, every other house
+price: of the prices that trade the most energy, the one where demand and
+supply are closest (see [Bidding](#bidding)). So a single participant's bids
+can move the price for the whole market. Two pre-generated pages show it on
+the full month, every other house
 running the default agent:
 
 - [docs/runs/all_default.html](docs/runs/all_default.html): all 20 houses on the default agent;
@@ -219,14 +220,14 @@ fifth of each peak.
 
 | full month, balanced | all default | with the market player | change |
 |---|---:|---:|---:|
-| the player's house | $420.33 | $388.88 | −$31.45 (−7.5%) |
+| the player's house | $420.33 | $393.89 | −$26.44 (−6.3%) |
 | clearing price in the hours it sold | 66% of grid | 90% of grid | |
-| the other nine storage-rich homes | $3,721 | $3,337 | −$383 |
-| the ten PV-rich homes | $5,705 | $6,130 | +$424 |
+| the other nine storage-rich homes | $3,721 | $3,539 | −$181 |
+| the ten PV-rich homes | $5,705 | $5,923 | +$217 |
 | all 20 houses | $9,846 | $9,856 | +$9 |
 
 One house holding out for 80% of the grid price lifted the peak price for
-every seller in those hours, so the other storage owners gained more than ten
+every seller in those hours, so the other storage owners gained nearly seven
 times what the player did, without changing anything themselves. The PV-rich homes,
 buying at the peaks, paid for all of it. Physically almost nothing changed:
 curtailment, grid imports and traded volume each moved by less than 1%. Strategic
@@ -365,6 +366,15 @@ The market clears at a single uniform price — the one that maximises the
 traded volume, which is the rule real power exchanges use. Everyone in the
 money trades at that same price regardless of what they bid, the short side
 fills completely, and the long side is rationed pro rata.
+
+Bids are steps, so often a whole range of prices trades that same maximum
+volume. The market then takes the price in that range where demand and supply
+are **closest** — the end of the range next to where the two curves cross.
+When supply is short that moves the price up the range, when demand is short
+down it: excess demand pushes the price up, excess supply pulls it down. If
+several prices are equally close, it takes the middle of those. So in the
+hourly page's bid heatmap for the whole market, the clearing price sits next
+to the boundary between red (more buying than selling) and green.
 
 ### The order within an hour
 

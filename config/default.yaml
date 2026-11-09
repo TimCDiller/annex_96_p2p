@@ -9,8 +9,8 @@
 #   annex96_ce1_tx_neighborhood   June,    cooling_device actuated, 719 steps
 #
 # Which one you want depends on what the exercise is FOR. In the Vermont
-# January the peer-to-peer market moves about 1.2% of the energy, because only
-# ~2% of participant-hours are net producing and a 2.9 kW battery discharge
+# January the peer-to-peer market moves about 1% of the energy, because only
+# ~1% of participant-hours are net producing and a 2.9 kW battery discharge
 # cannot dent a 19.5 kW compressor -- so bidding barely separates the agents.
 # Texas in June puts real PV surplus into the middle of the day, which is when
 # a peer-to-peer market has something to do.

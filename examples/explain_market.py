@@ -97,7 +97,9 @@ print("""
 Demand at price p = everything bid at p or ABOVE (those buyers are happy to
 pay p). Supply at price p = everything offered at p or BELOW. The clearing
 price is the one that maximises the traded volume -- the rule real power
-exchanges use.
+exchanges use. When several prices trade the same volume, it is the one where
+demand and supply are closest (the middle, if that still leaves several). Here
+$0.03-$0.10 all trade 5 kWh; demand is nearest supply from $0.05 up.
 """)
 clearing = clear({"Alice": alice, "Bob": bob, "Carol": carol}, price_grid)
 print(describe(clearing))

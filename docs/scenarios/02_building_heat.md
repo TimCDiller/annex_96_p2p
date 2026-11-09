@@ -44,7 +44,7 @@ All use the default smoothed thermostat to reach their aim.
 
 | ten PV-rich homes, full month | default | coast | late preheat + coast | solar preheat + coast |
 |---|---:|---:|---:|---:|
-| **bill** | $5,706 | **$5,436 (−4.7%)** | $5,513 (−3.4%) | $5,775 (+1.2%) |
+| **bill** | $5,705 | **$5,436 (−4.7%)** | $5,513 (−3.4%) | $5,775 (+1.2%) |
 | comfort penalty | $130 | $165 | $189 | $363 |
 | heat pump 13:00–15:00 | 4,124 kWh | 4,145 | **5,099** | 5,125 |
 | heat pump 16:00–21:00 | 8,416 kWh | **7,239** | 7,258 | 7,268 |

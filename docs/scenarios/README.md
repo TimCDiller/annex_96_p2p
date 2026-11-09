@@ -12,9 +12,9 @@ way to check you understand it, and a fair starting point for your own agent.
 
 | page | the question | the short answer |
 |---|---|---|
-| [1. How strong is the default agent?](01_default_agent.md) | Can a student beat the agent that runs every unclaimed house? | On a storage-rich house with a fast battery, yes: two simple ideas save **17%**. On a slow battery about 5%. A broken thermostat loop was found and fixed along the way. |
+| [1. How strong is the default agent?](01_default_agent.md) | Can a student beat the agent that runs every unclaimed house? | On a storage-rich house with a fast battery, yes: two simple ideas save **14%**. On a slow battery about 4%. A broken thermostat loop was found and fixed along the way. |
 | [2. PV-rich homes and the building as a battery](02_building_heat.md) | The PV-rich homes sell surplus at 7¢ and buy back at 22–32¢. Can they store the surplus as heat in the building? | Barely: heat stored at 14:00 has mostly leaked away by 18:00. What does work is **coasting** — sitting lower in the comfort band during the evening peak — worth about **5%**. |
-| [3. Market power: players, cartels and cheaters](03_market_power.md) | What can strategic pricing achieve in a uniform-price market? | A lot of money moves — over **$1,100 a month** between groups — but almost no energy does. Rigid strategies that meet each other destroy value; learning ones recover most of it. Cheating on a cartel by a cent earns nothing. |
+| [3. Market power: players, cartels and cheaters](03_market_power.md) | What can strategic pricing achieve in a uniform-price market? | A lot of money moves — over **$1,100 a month** between groups — but almost no energy does. Rigid strategies that meet each other destroy value; learning ones recover most of it. Cheating on a cartel by a cent earns a little, and costs the loyal members more. |
 
 ## Ground rules for every page
 

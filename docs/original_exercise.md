@@ -127,10 +127,10 @@ between them is **bidding and nothing else**.
 
 | file | how it prices | score | bought | sold |
 |---|---|---:|---:|---:|
-| `example_inverse_soc.py` | divider at `(1 - state_of_charge) x grid_price` | 1.005 | 144 | 59 |
-| `example_team.py` | a rule stack keyed off price percentiles | 1.006 | 74 | 43 |
-| `example_flat50.py` | assumes the market clears at 50% of next hour's grid price | 1.013 | 201 | 46 |
-| `example_surplus.py` | four obvious rules: self-consume, charge on surplus, dump when full, pay 95% when empty | 1.025 | 110 | 2 |
+| `example_inverse_soc.py` | divider at `(1 - state_of_charge) x grid_price` | 1.009 | 124 | 40 |
+| `example_team.py` | a rule stack keyed off price percentiles | 1.009 | 68 | 25 |
+| `example_flat50.py` | assumes the market clears at 50% of next hour's grid price | 1.021 | 152 | 8 |
+| `example_surplus.py` | four obvious rules: self-consume, charge on surplus, dump when full, pay 95% when empty | 1.027 | 128 | 2 |
 
 Two weeks of the Vermont January, five buildings each, everyone else on the
 default agent. `score` is your bill over what the default agent would have paid
@@ -138,7 +138,7 @@ for the same buildings, so 1.000 is "no better than doing nothing clever" and
 lower is better.
 
 **Read that table honestly: every one of them is slightly WORSE than the
-default, and they are all within 2% of each other.** That is not four badly
+default, and they are all within 3% of each other.** That is not four badly
 written agents. It is what this scenario is: in a Vermont January the market
 moves about 1% of the energy, so there is almost nothing for a bidding strategy
 to win or lose, and what little the agents do trade costs them a bit more than
@@ -164,11 +164,11 @@ tells you at a glance whether an agent is pricing itself into the market or out
 of it.
 
 It also computes why the market is thin, which is the first thing anyone asks.
-On the Vermont January the peer-to-peer market handles about **1.2% of the
-energy** -- 546 kWh traded against 44,633 kWh imported -- for three reasons the
+On the Vermont January the peer-to-peer market handles about **1% of the
+energy** -- 484 kWh traded against 48,093 kWh imported -- for three reasons the
 booklet quantifies:
 
-- **there is barely a supply side.** Only **2%** of participant-hours are net
+- **there is barely a supply side.** Only **1%** of participant-hours are net
   producing. PV generates in 126 of 336 hours and never much, because it is a
   Vermont winter.
 - **storage is far too small to matter.** The compressor draws 19.5 kW; the

@@ -125,6 +125,67 @@ def test_clearing_price_lies_between_the_marginal_bids():
     assert 0.04 - TOL <= result.price <= 0.16 + TOL
 
 
+def test_short_supply_clears_at_the_top_of_the_tie():
+    """Hour 645 of a course run, in miniature: cheap supply is short, most
+    buyers drop out above 0.11 and the next sellers want 0.12. Every price from
+    0.01 to 0.11 trades the same volume; the market takes the one where
+    demand and supply are closest -- 0.11, next to the crossing -- not the
+    middle of the range."""
+    g = grid()
+    cheap = np.zeros(len(g)); cheap[1] = -43.6
+    dear = np.zeros(len(g)); dear[12] = -130.6
+    keen = np.zeros(len(g)); keen[19] = +35.6
+    eleven = np.zeros(len(g)); eleven[11] = +164.2
+    ten = np.zeros(len(g)); ten[10] = +19.1
+    nine = np.zeros(len(g)); nine[9] = +5.1
+
+    result = clear({"cheap": cheap, "dear": dear, "keen": keen,
+                    "eleven": eleven, "ten": ten, "nine": nine}, g)
+
+    assert result.volume == pytest.approx(43.6)
+    assert result.price == pytest.approx(0.11)
+    assert result.quantities["dear"] == 0.0
+
+
+def test_short_demand_clears_at_the_bottom_of_the_tie():
+    """The mirror image: plenty of supply, little demand. Excess supply pulls
+    the price to the bottom of the tied range."""
+    g = grid()
+    seller = np.zeros(len(g)); seller[3] = -2.0
+    flood = np.zeros(len(g)); flood[5] = -12.0; flood[6] = -10.0; flood[7] = -20.0
+    buyer = np.zeros(len(g)); buyer[15] = +10.0
+
+    result = clear({"s": seller, "flood": flood, "b": buyer}, g)
+
+    assert result.volume == pytest.approx(10.0)
+    assert result.price == pytest.approx(0.05)
+
+
+def test_flat_tie_clears_in_the_middle():
+    """Demand and supply both flat across the tied range: the imbalance does
+    not pick a price, so the middle one is taken."""
+    g = grid()
+    seller = np.zeros(len(g)); seller[4] = -5.0
+    buyer = np.zeros(len(g)); buyer[16] = +3.0
+
+    result = clear({"s": seller, "b": buyer}, g)
+
+    assert result.volume == pytest.approx(3.0)
+    assert result.price == pytest.approx(0.10)
+
+
+def test_tie_break_never_trades_less_than_the_most_possible():
+    """Breaking ties by imbalance moves the price, never the volume."""
+    rng = np.random.default_rng(2)
+    g = grid(0.30)
+    for _ in range(300):
+        bids = {"p%d" % i: rng.normal(0, 3, len(g)) * (rng.random(len(g)) < 0.2)
+                for i in range(rng.integers(2, 7))}
+        result = clear(bids, g)
+        most = float(np.minimum(result.demand_curve, result.supply_curve).max())
+        assert result.volume == pytest.approx(most)
+
+
 def test_higher_bidder_is_served_first():
     """Scarce supply should go to whoever values it most."""
     g = grid()

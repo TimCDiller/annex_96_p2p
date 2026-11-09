@@ -26,10 +26,10 @@ one to hold out against then.
 
 Two things to watch for in the results, because a uniform-price market does
 not reward bids the way intuition suggests:
-  * The clearing price is the middle of the range of prices that trade the
-    most energy. A high ask that still clears drags that range -- and the price
-    paid to EVERY seller in that hour -- upwards. Holding out can help the
-    other sellers as much as yourself.
+  * Of the prices that trade the most energy, the market takes the one where
+    demand and supply are closest. A high ask that still clears drags that
+    price -- and the price paid to EVERY seller in that hour -- upwards.
+    Holding out can help the other sellers as much as yourself.
   * An ask that does not clear earns nothing that hour; the energy waits, and
     loses 10% on the round trip if it is later used at home instead.
 """

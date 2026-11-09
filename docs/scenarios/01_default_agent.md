@@ -76,18 +76,18 @@ default agent, everything except the named idea unchanged.
 | one storage-rich house, full month | house bill | change | other 19 houses | all 20 |
 |---|---:|---:|---:|---:|
 | default agent, house 199613 (80 kWh, 80 kW) | $420.33 | | | |
-| cap storage purchases | $393.33 | −6.4% | +$35 | +$8 |
+| cap storage purchases | $407.77 | −3.0% | +$23 | +$10 |
 | spend in the dearest hours | $374.56 | −10.9% | −$14 | −$60 |
-| **both** | **$348.13** | **−17.2%** | +$22 | −$51 |
+| **both** | **$362.72** | **−13.7%** | +$9 | −$48 |
 | default agent, house 147002 (80 kWh, 20 kW) | $839.12 | | | |
-| both | $793.55 | −5.4% | −$4 | −$50 |
+| both | $807.00 | −3.8% | −$14 | −$46 |
 
 - **Spending in the dearest hours is a real efficiency gain**: the same stored
   kWh displaces dearer grid power, so the whole market is better off.
 - **Capping purchases is mostly a transfer**: the house pays sellers less, and
   they lose what it saves.
-- **The slow battery gains a third as much**: 20 kW cannot concentrate its
-  energy into the two dearest hours.
+- **The slow battery gains about a quarter as much**: 20 kW cannot
+  concentrate its energy into the two dearest hours.
 - **A first version of idea 2 lost 11%.** It gave each peak hour only the
   house's own need, dearest first — so it never sold to peers and finished
   each evening with 40% of the battery unused. Read your own `settlements.csv`

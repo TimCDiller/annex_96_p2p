@@ -106,8 +106,7 @@ SCENARIOS = {
 def run(scenario, days=None, submission=None, html=True):
     folder = OUT / scenario
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "fields.py").write_text("FIELDS = %r
-" % {scenario: SCENARIOS[scenario]})
+    (folder / "fields.py").write_text("FIELDS = %r\n" % {scenario: SCENARIOS[scenario]})
     command = [sys.executable, "-m", "annex96p2p.altered_stock", "run",
                "--configurations", "balanced", "--modes", "competitive",
                "--out", str(folder), "--agents", str(folder), "--field", scenario]
