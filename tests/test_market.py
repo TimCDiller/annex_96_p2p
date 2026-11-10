@@ -186,6 +186,65 @@ def test_tie_break_never_trades_less_than_the_most_possible():
         assert result.volume == pytest.approx(most)
 
 
+def net_vector(v):
+    """The non-overlapping bid with the same net position as `v` at every price."""
+    wants = np.cumsum(np.maximum(v, 0)[::-1])[::-1]
+    offers = np.cumsum(np.maximum(-v, 0))
+    net = wants - offers
+    buys, sells = np.maximum(net, 0), np.maximum(-net, 0)
+    return (buys - np.append(buys[1:], 0.0)) - (sells - np.insert(sells[:-1], 0, 0.0))
+
+
+def test_opposing_bids_clear_as_their_net():
+    """Buyers are long: 20 kWh offered, 40 wanted. Buying 105 and selling 100
+    is a net purchase of 5, and must clear exactly like buying 5 -- not leave
+    the bidder selling 10 because its sell landed on the short side."""
+    g = grid(0.30)
+    sellers = np.zeros(len(g)); sellers[10] = -20.0
+    others = np.zeros(len(g)); others[28] = +35.0
+    honest = np.zeros(len(g)); honest[28] = +5.0
+    opposing = np.zeros(len(g)); opposing[28] = +105.0; opposing[1] = -100.0
+
+    a = clear({"sellers": sellers, "others": others, "me": honest}, g)
+    b = clear({"sellers": sellers, "others": others, "me": opposing}, g)
+
+    assert a.quantities["me"] == pytest.approx(2.5)
+    assert b.quantities["me"] == pytest.approx(2.5)
+    assert b.volume == pytest.approx(20.0)          # no trading with yourself
+    assert b.price == pytest.approx(a.price)
+
+
+def test_overlapping_bid_clears_like_its_non_overlapping_twin():
+    """Buy 2 up to 38c and sell 3 from 25c is the same position as buy 2 up to
+    24c, sell 1 from 25c -- and, above 38c where the buy stops counting, sell 2
+    more from 39c."""
+    g = grid(0.40)
+    overlap = np.zeros(len(g)); overlap[38] = 2; overlap[8] = 6; overlap[25] = -3; overlap[34] = -5
+    clean = np.zeros(len(g)); clean[24] = 2; clean[8] = 6; clean[25] = -1; clean[34] = -5; clean[39] = -2
+    assert np.allclose(net_vector(overlap), clean)
+    seller = np.zeros(len(g)); seller[20] = -4.0
+    buyer = np.zeros(len(g)); buyer[39] = +6.0
+    for other in ({"seller": seller}, {"buyer": buyer}, {"seller": seller, "buyer": buyer}):
+        x = clear({**other, "store": overlap}, g)
+        y = clear({**other, "store": clean}, g)
+        assert x.price == y.price
+        assert x.quantities["store"] == pytest.approx(y.quantities["store"])
+
+
+def test_every_bid_clears_like_its_net():
+    rng = np.random.default_rng(3)
+    g = grid(0.30)
+    for _ in range(300):
+        bids = {"p%d" % i: rng.normal(0, 3, len(g)) * (rng.random(len(g)) < 0.3)
+                for i in range(rng.integers(2, 6))}
+        raw = clear(bids, g)
+        netted = clear({k: net_vector(v) for k, v in bids.items()}, g)
+        assert raw.price == netted.price
+        assert raw.volume == pytest.approx(netted.volume)
+        for k in bids:
+            assert raw.quantities[k] == pytest.approx(netted.quantities[k], abs=1e-9)
+
+
 def test_higher_bidder_is_served_first():
     """Scarce supply should go to whoever values it most."""
     g = grid()

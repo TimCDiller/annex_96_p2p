@@ -10,6 +10,12 @@ $0.01 steps. The two ends of that range are not arbitrary:
   grid import price     you can always buy from the grid at this price, so
                         no buyer will ever pay more than it inside the market.
 
+Each participant's bid is netted first: at every price p it counts as a buyer
+of (what it bids to buy at p or above) - (what it offers at p or below), or a
+seller of the opposite, never both. A bid that buys above its own sells
+therefore clears exactly like the non-overlapping bid with the same net
+position, and nobody trades with themselves.
+
 Clearing follows the rule real power exchanges use: pick the price that
 maximises the traded volume.
 
@@ -134,8 +140,16 @@ def clear(bids: Dict[str, np.ndarray], price_grid: np.ndarray) -> Clearing:
         arr = np.asarray(bids[name], dtype=float).ravel()
         stacked[i, :min(n, arr.size)] = arr[:n]
 
-    buy_at = np.maximum(stacked, 0.0)          # per participant, per level
-    sell_at = np.maximum(-stacked, 0.0)
+    # Net each participant's bid first: at every price it is a buyer of
+    # wants(p) - offers(p) or a seller of the opposite, never both. A bid that
+    # buys above its own sells would otherwise be rationed on both sides at
+    # once and clear at a position it never asked for.
+    wants = np.cumsum(np.maximum(stacked, 0.0)[:, ::-1], axis=1)[:, ::-1]
+    offers = np.cumsum(np.maximum(-stacked, 0.0), axis=1)
+    net = wants - offers                       # non-increasing in price
+    buys, sells = np.maximum(net, 0.0), np.maximum(-net, 0.0)
+    buy_at = np.maximum(buys - np.append(buys[:, 1:], np.zeros((len(names), 1)), axis=1), 0.0)
+    sell_at = np.maximum(sells - np.insert(sells[:, :-1], 0, 0.0, axis=1), 0.0)
 
     # demand[j]: everyone willing to pay price_grid[j] or more
     demand = np.cumsum(buy_at.sum(axis=0)[::-1])[::-1]

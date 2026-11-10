@@ -362,6 +362,13 @@ one cent steps from `$0.00` to the current grid price:
 Positive means *buy that much at that price or cheaper*. Negative means
 *sell that much at that price or dearer*.
 
+Your bid is **netted** before it clears: at every price you count as a buyer
+of what you bid to buy at that price or above, minus what you offered at that
+price or below, or as a seller of the difference the other way, never both.
+So a bid that buys above its own sells clears exactly like the
+non-overlapping bid with the same net position, and you never trade with
+yourself.
+
 The market clears at a single uniform price — the one that maximises the
 traded volume, which is the rule real power exchanges use. Everyone in the
 money trades at that same price regardless of what they bid, the short side
