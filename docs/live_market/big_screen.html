@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Market</title>
+<style>
+  :root {
+    --bg: #fbfbf9; --panel: #ffffff; --ink: #1f2328; --muted: #5b6168; --line: #e3e3df;
+    --buy: #c0392b; --sell: #1e8449; --accent: #2b6cb0; --bad: #b42318;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1320px; margin: 0 auto; padding: 18px 16px 40px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 24px; margin: 0; }
+  #status { color: var(--muted); }
+  #status.bad { color: var(--bad); }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0;
+              padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .controls select { font: inherit; padding: 6px 8px; border: 1px solid #c9ccd1; border-radius: 5px; background: #fff; }
+  .bgnote { color: var(--muted); margin-top: -10px; margin-bottom: 18px; }
+  tr.bg td { color: var(--muted); background: #fafaf8; }
+  tr.bg .buy, tr.bg .sell { font-weight: 400; }
+  .controls input { flex: 1 1 360px; min-width: 0; font: inherit; font-size: 13px; padding: 6px 8px;
+                    border: 1px solid #c9ccd1; border-radius: 5px; }
+  button { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 6px; cursor: pointer;
+           border: 1px solid var(--accent); background: var(--panel); color: var(--accent); }
+  button:hover { background: var(--accent); color: #fff; }
+  button.primary { background: var(--accent); color: #fff; font-size: 18px; padding: 12px 28px; }
+  button.primary:hover { filter: brightness(1.1); }
+  .round { color: var(--muted); font-size: 13px; }
+  #waiting { text-align: center; padding: 28px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  #waiting .count { font-size: 48px; font-weight: 700; }
+  #names { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 18px auto 24px; max-width: 1100px; }
+  .chip { background: #eef3fa; border: 1px solid #cfdcee; border-radius: 16px; padding: 4px 12px; font-weight: 600; }
+  .summary { margin: 0 0 10px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line);
+             border-radius: 8px; display: flex; gap: 22px; flex-wrap: wrap; font-size: 16px; }
+  .summary b { font-size: 20px; }
+  .summary .why { color: var(--muted); flex-basis: 100%; font-size: 15px; }
+  .figure { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+  .figure svg { display: block; width: 100%; height: auto; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; background: var(--panel);
+          border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 14px; }
+  th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; background: #f6f6f3; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .buy { color: var(--buy); font-weight: 600; } .sell { color: var(--sell); font-weight: 600; } .none { color: var(--muted); }
+  .help { color: var(--muted); font-size: 13px; margin-top: 18px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Live market</h1>
+    <span id="status">Not connected.</span>
+  </header>
+
+  <div class="controls">
+    <input id="source" type="url" placeholder="Paste the web app URL from Apps Script (…/exec)" aria-label="Web app URL">
+    <button id="connect">Connect</button>
+    <button id="demo" title="Load made-up bids to rehearse without the form">Demo bids</button>
+    <label class="round" for="background">Background:</label>
+    <select id="background" title="Participants whose bids are added to the students' bids">
+      <option value="empty">empty</option>
+      <option value="normal">normal market</option>
+      <option value="stable">stable market</option>
+      <option value="volatile">volatile market</option>
+    </select>
+    <button id="newround" title="Count only answers submitted from now on">New round</button>
+    <span class="round" id="roundinfo"></span>
+  </div>
+
+  <section id="waiting">
+    <div class="count" id="count">0</div>
+    <div id="countlabel">participants have submitted</div>
+    <div id="names"></div>
+    <div class="bgnote" id="bgnote"></div>
+    <button class="primary" id="reveal">Clear the market</button>
+  </section>
+
+  <section id="result" hidden>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:8px; gap:8px">
+      <button id="hide">Back to waiting screen</button>
+    </div>
+    <div class="summary" id="summary"></div>
+    <div class="figure" id="figure"></div>
+    <table id="table"></table>
+  </section>
+
+  <p class="help">Setup: <code>docs/live_market/README.md</code>. Answers are read every 5 seconds; each
+  participant's latest answer in this round counts. The clearing is the course market's own rule
+  (<code>clear()</code> in <code>src/annex96p2p/market.py</code>), ported line by line.</p>
+</main>
+
+<script>
+// BEGIN MARKET -- a port of annex96p2p.market.clear(); keep in step with it.
+const TOL = 1e-9;
+
+// vectors: one array per participant, one signed kWh per price level (+ buy, - sell).
+function clearMarket(vectors) {
+  const m = vectors.length, n = vectors[0].length;
+  const buyAt = [], sellAt = [];
+  for (const v of vectors) {
+    // Net the bid: wants = bought at this level or above, offers = sold at this level or below.
+    const wants = new Array(n).fill(0), offers = new Array(n).fill(0);
+    let acc = 0;
+    for (let k = n - 1; k >= 0; k--) { acc += Math.max(v[k], 0); wants[k] = acc; }
+    acc = 0;
+    for (let k = 0; k < n; k++) { acc += Math.max(-v[k], 0); offers[k] = acc; }
+    const buys = wants.map((w, k) => Math.max(w - offers[k], 0));
+    const sells = wants.map((w, k) => Math.max(offers[k] - w, 0));
+    buyAt.push(buys.map((b, k) => Math.max(b - (k + 1 < n ? buys[k + 1] : 0), 0)));
+    sellAt.push(sells.map((s, k) => Math.max(s - (k > 0 ? sells[k - 1] : 0), 0)));
+  }
+  const demand = new Array(n).fill(0), supply = new Array(n).fill(0);
+  let acc = 0;
+  for (let k = n - 1; k >= 0; k--) { for (let i = 0; i < m; i++) acc += buyAt[i][k]; demand[k] = acc; }
+  acc = 0;
+  for (let k = 0; k < n; k++) { for (let i = 0; i < m; i++) acc += sellAt[i][k]; supply[k] = acc; }
+  const volume = demand.map((d, k) => Math.min(d, supply[k]));
+  const best = Math.max(...volume);
+  const result = { level: null, volume: 0, quantities: new Array(m).fill(0), demand, supply, volumeCurve: volume,
+                   buyAt, sellAt, tied: [], closest: [] };
+  if (best <= TOL) return result;
+
+  let tied = [];
+  for (let k = 0; k < n; k++) if (volume[k] >= best - TOL) tied.push(k);
+  const gaps = tied.map(k => Math.abs(demand[k] - supply[k]));
+  const smallest = Math.min(...gaps);
+  const closest = tied.filter((k, i) => gaps[i] <= smallest + TOL);
+  const j = closest[Math.floor(closest.length / 2)];
+
+  const cleared = volume[j];
+  const buyFill = demand[j] > TOL ? cleared / demand[j] : 0;
+  const sellFill = supply[j] > TOL ? cleared / supply[j] : 0;
+  const q = new Array(m).fill(0);
+  for (let i = 0; i < m; i++) {
+    let eb = 0, es = 0;
+    for (let k = j; k < n; k++) eb += buyAt[i][k];
+    for (let k = 0; k <= j; k++) es += sellAt[i][k];
+    q[i] = eb * buyFill - es * sellFill;
+  }
+  // Kill floating point drift so the market balances exactly.
+  const residual = q.reduce((a, b) => a + b, 0);
+  if (Math.abs(residual) > TOL) {
+    let big = 0;
+    for (let i = 1; i < m; i++) if (Math.abs(q[i]) > Math.abs(q[big])) big = i;
+    q[big] -= residual;
+  }
+  return Object.assign(result, { level: j, volume: cleared, quantities: q, tied, closest });
+}
+// END MARKET
+
+// ---------------------------------------------------------------- data
+const store = {                                   // per-screen settings; the page works without them
+  get(k) { try { return localStorage.getItem("liveMarket." + k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem("liveMarket." + k, v); } catch (e) { /* private window */ } },
+};
+let source = new URLSearchParams(location.search).get("source") || store.get("source") || "";
+let roundStart = Number(store.get("roundStart")) || 0;       // ms; answers before this are ignored
+let latest = { grid: 30, responses: [] };
+let demo = false, revealed = false, timer = null;
+
+// Background participants: the three markets of market_clearing_explorer.html, as [kWh (+ buy, - sell), cents].
+const BACKGROUNDS = {
+  empty: [],
+  normal: [[[-4, 1]], [[-3, 6], [-3, 15]], [[-4, 12]], [[5, 4], [-4, 20]],
+           [[4, 27], [2, 14]], [[5, 24]], [[3, 18], [2, 9]], [[6, 3], [-3, 25]]],
+  stable: [[[-1.5, 13], [-1.5, 15], [-1.5, 17], [-1.5, 19], [-1.5, 21]],
+           [[-1.5, 14], [-1.5, 16], [-1.5, 18], [-1.5, 20], [-1.5, 22]],
+           [[-1.5, 13], [-1.5, 15], [-1.5, 16], [-1.5, 18], [-1.5, 20]],
+           [[-1.5, 14], [-1.5, 15], [-1.5, 17], [-1.5, 19], [-1.5, 21]],
+           [[1.5, 23], [1.5, 21], [1.5, 19], [1.5, 17], [1.5, 15]],
+           [[1.5, 22], [1.5, 20], [1.5, 18], [1.5, 16], [1.5, 14]],
+           [[1.5, 23], [1.5, 21], [1.5, 20], [1.5, 18], [1.5, 16]],
+           [[1.5, 22], [1.5, 21], [1.5, 19], [1.5, 17], [1.5, 15]]],
+  volatile: [[[-5, 2]], [[-5, 3]], [[-2, 20]], [[-2, 21]], [[5, 28]], [[5, 27]], [[2, 6]], [[2, 5]]],
+};
+const BG_LABEL = { empty: "empty", normal: "normal market", stable: "stable market", volatile: "volatile market" };
+let background = BACKGROUNDS[store.get("background")] ? store.get("background") : "empty";
+
+function backgroundParticipants() {
+  return BACKGROUNDS[background].map((bids, i) => ({ name: "ABCDEFGH"[i], bids, bg: true }));
+}
+
+const DEMO = { grid: 30, responses: [
+  ["Team Solar", [[-4, 1]]], ["Ada", [[-3, 6], [-3, 15]]], ["Grace", [[-4, 12]]], ["Linus", [[5, 4], [-4, 20]]],
+  ["Team Heat", [[4, 27], [2, 14]]], ["Marie", [[5, 24]]], ["Nikola", [[3, 18], [2, 9]]], ["Batteries R Us", [[6, 3], [-3, 25]]],
+  ["Emmy", [[2, 22], [1, 16]]], ["Alan", [[-2, 17]]], ["Hedy", [[3, 21], [-2, 28]]], ["Tim", [[-1, 8], [1, 3]]],
+].map(([name, bids], i) => ({ time: Date.now() + i, name, bids })) };
+
+// One participant per name (case-insensitive): the latest answer since the round started,
+// shown under the spelling first used, so names do not change on screen when someone resubmits.
+function participants(data) {
+  const byName = new Map();
+  const ordered = [...data.responses].sort((a, b) => new Date(a.time) - new Date(b.time));
+  for (const r of ordered) {
+    const t = new Date(r.time).getTime();
+    if (!demo && t < roundStart) continue;
+    const key = r.name.trim().toLowerCase();
+    if (!key) continue;
+    const prev = byName.get(key);
+    byName.set(key, { t, name: prev ? prev.name : r.name.trim(), bids: r.bids });
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function vectorOf(bids, grid) {
+  const v = new Array(grid + 1).fill(0);
+  for (const [amount, price] of bids) {
+    if (!Number.isFinite(amount) || !Number.isFinite(price) || amount === 0) continue;
+    v[Math.min(grid, Math.max(0, Math.round(price)))] += amount;     // snap to a 1-cent level
+  }
+  return v;
+}
+
+function load() {
+  if (demo) { latest = DEMO; render(); return; }
+  if (!source) { setStatus("Paste the web app URL and press Connect, or try Demo bids.", true); return; }
+  // JSONP: works from a file opened on the screen's computer, with no server and no CORS setup.
+  const old = document.getElementById("jsonp");
+  if (old) old.remove();
+  const s = document.createElement("script");
+  s.id = "jsonp";
+  s.src = source + (source.includes("?") ? "&" : "?") + "callback=__liveBids&t=" + Date.now();
+  s.onerror = () => setStatus("Could not reach the web app. Check the URL and that access is set to 'Anyone'.", true);
+  document.body.appendChild(s);
+}
+window.__liveBids = data => {
+  if (demo) return;
+  latest = data;
+  setStatus("Connected · updated " + new Date().toLocaleTimeString());
+  render();
+};
+
+function setStatus(text, bad) {
+  const el = document.getElementById("status");
+  el.textContent = text;
+  el.className = bad ? "bad" : "";
+}
+
+// ---------------------------------------------------------------- drawing
+const C = { buy: "#c0392b", sell: "#1e8449", tie: "#f0b27a", best: "#d35400", idle: "#c3c8cd",
+            ink: "#1f2328", muted: "#5b6168", line: "#e3e3df" };
+const BUY_SHADES = ["#922b21", "#d4513f", "#e88e7d", "#b03a2e", "#f0b3a6"];
+const SELL_SHADES = ["#145a32", "#2e9455", "#7cc08f", "#1d6e3e", "#b2dbbd"];
+// Background participants: greyer shades, hatched, labelled with letters.
+const BG_BUY_SHADES = ["#a5706a", "#c79b96", "#b88580"];
+const BG_SELL_SHADES = ["#5b7f69", "#93b49f", "#769a83"];
+const HATCH = `<defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
+              `<line x1="0" y1="0" x2="0" y2="5" stroke="#fff" stroke-width="2.2" stroke-opacity="0.75"/></pattern></defs>`;
+const fmt = (x, d = 1) => (Math.abs(x) < 0.005 ? 0 : x).toFixed(d);
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+function niceStep(max) {
+  const raw = max / 4, pow = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+  return [1, 2, 5, 10].map(f => f * pow).find(s => s >= raw) || raw;
+}
+
+// people: students first (numbered 1, 2, ...), then background participants (lettered A-H).
+function drawFigure(grid, people, r) {
+  const names = people.map(p => p.name);
+  const tag = people.map((p, i) => (p.bg ? p.name : String(i + 1)));
+  const W = 1240, top = 40, n = grid + 1, rows3 = names.length;
+  const bottom = Math.max(372, top + rows3 * 22);
+  const hasBg = people.some(p => p.bg);
+  const H = bottom + (hasBg ? 76 : 58);
+  const rowH = (bottom - top) / n, barH = rowH * 0.8;
+  const y = k => bottom - (k + 0.5) * rowH;
+  const out = [], add = s => out.push(s);
+  const priceAxis = x0 => {
+    for (let k = 0; k <= grid; k += 5) add(`<text x="${x0 - 6}" y="${y(k) + 4}" text-anchor="end" font-size="11" fill="${C.muted}">${k}¢</text>`);
+  };
+  const hasPrice = r.level !== null;
+  const band = hasPrice ? [Math.min(...r.tied), Math.max(...r.tied)] : null;
+
+  // ---- panel 1: every netted order over its reach; supply left, demand right
+  const P1 = { x0: 60, x1: 600 }, c1 = (P1.x0 + P1.x1) / 2;
+  const maxSide = Math.max(1, ...r.demand, ...r.supply);
+  const s1 = (P1.x1 - P1.x0) / 2 / (maxSide * 1.08);
+  add(`<text x="${c1}" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="${C.ink}">1. every order over its reach: supply ← green | red → demand</text>`);
+  if (band) add(`<rect x="${P1.x0}" y="${y(band[1]) - rowH / 2}" width="${P1.x1 - P1.x0}" height="${(band[1] - band[0] + 1) * rowH}" fill="rgba(245,203,167,0.4)"/>`);
+  const step1 = niceStep(maxSide);
+  for (let t = 0; t <= maxSide * 1.08; t += step1) {
+    for (const sgn of t === 0 ? [1] : [1, -1]) {
+      const x = c1 + sgn * t * s1;
+      add(`<line x1="${x}" x2="${x}" y1="${top}" y2="${bottom}" stroke="${C.line}"/>`);
+      add(`<text x="${x}" y="${bottom + 15}" text-anchor="middle" font-size="11" fill="${C.muted}">${+t.toFixed(2)}</text>`);
+    }
+  }
+  add(`<text x="${c1}" y="${bottom + 32}" text-anchor="middle" font-size="12" fill="${C.muted}">kWh that count at each price · numbers: participants, see panel 3</text>`);
+  const orders = [];
+  r.buyAt.forEach((row, i) => row.forEach((q, k) => { if (q > TOL) orders.push({ i, k, q, buy: true }); }));
+  r.sellAt.forEach((row, i) => row.forEach((q, k) => { if (q > TOL) orders.push({ i, k, q, buy: false }); }));
+  for (const buy of [true, false]) {
+    const group = orders.filter(o => o.buy === buy).sort((a, b) => buy ? (b.k - a.k || a.i - b.i) : (a.k - b.k || a.i - b.i));
+    const offset = new Array(n).fill(0), sgn = buy ? 1 : -1;
+    let nStudent = 0, nBg = 0;
+    group.forEach(o => {
+      const bg = people[o.i].bg;
+      const shades = bg ? (buy ? BG_BUY_SHADES : BG_SELL_SHADES) : (buy ? BUY_SHADES : SELL_SHADES);
+      const idx = bg ? nBg++ : nStudent++;
+      const colour = shades[idx % shades.length];
+      const light = bg || idx % shades.length === 2 || idx % shades.length === 4;
+      const tip = `${bg ? "background " : ""}${names[o.i]}: ${buy ? "buy" : "sell"} ${fmt(o.q, 2)} kWh, ${buy ? "up to" : "from"} ${o.k}¢`;
+      for (let k = 0; k < n; k++) {
+        if (!(buy ? k <= o.k : k >= o.k)) continue;
+        const x = sgn > 0 ? c1 + offset[k] * s1 : c1 - (offset[k] + o.q) * s1;
+        const solid = k === o.k;
+        const box = `x="${x}" y="${y(k) - barH / 2}" width="${o.q * s1}" height="${barH}"`;
+        const edge = solid ? (bg ? ' stroke="#555" stroke-width="0.7" stroke-dasharray="2 1.5"' : ' stroke="#000" stroke-width="0.7"') : "";
+        add(`<rect ${box} fill="${colour}" fill-opacity="${solid ? 1 : 0.3}"${edge}><title>${esc(tip)}</title></rect>`);
+        if (bg) add(`<rect ${box} fill="url(#hatch)" fill-opacity="${solid ? 1 : 0.6}" pointer-events="none"/>`);
+        if (solid && o.q * s1 >= 12) add(`<text x="${x + o.q * s1 / 2}" y="${y(k) + 3.5}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${light ? C.ink : "#fff"}" pointer-events="none">${tag[o.i]}</text>`);
+        offset[k] += o.q;
+      }
+    });
+  }
+  add(`<line x1="${c1}" x2="${c1}" y1="${top}" y2="${bottom}" stroke="${C.ink}"/>`);
+  if (hasPrice) {
+    add(`<line x1="${P1.x0}" x2="${P1.x1}" y1="${y(r.level)}" y2="${y(r.level)}" stroke="#000" stroke-dasharray="3 3"/>`);
+    add(`<rect x="${P1.x1 - 158}" y="${y(r.level) - 21}" width="154" height="16" rx="3" fill="#fff" fill-opacity="0.9"/>`);
+    add(`<text x="${P1.x1 - 81}" y="${y(r.level) - 9}" text-anchor="middle" font-size="12" font-weight="700" fill="#000">clears at ${r.level}¢: ${fmt(r.volume)} kWh</text>`);
+  }
+  priceAxis(P1.x0);
+
+  // ---- panel 2: traded volume at every price
+  const P2 = { x0: 660, x1: 940 };
+  const vmax = Math.max(1, ...r.volumeCurve);
+  const s2 = (P2.x1 - P2.x0 - 44) / vmax;
+  add(`<text x="${(P2.x0 + P2.x1) / 2}" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="${C.ink}">2. traded = min(demand, supply)</text>`);
+  const step2 = niceStep(vmax);
+  for (let t = 0; t <= vmax; t += step2) {
+    const x = P2.x0 + t * s2;
+    add(`<line x1="${x}" x2="${x}" y1="${top}" y2="${bottom}" stroke="${C.line}"/>`);
+    add(`<text x="${x}" y="${bottom + 15}" text-anchor="middle" font-size="11" fill="${C.muted}">${+t.toFixed(2)}</text>`);
+  }
+  add(`<text x="${(P2.x0 + P2.x1) / 2}" y="${bottom + 32}" text-anchor="middle" font-size="12" fill="${C.muted}">kWh that would trade at this price</text>`);
+  const tiedSet = new Set(r.tied), closestSet = new Set(r.closest);
+  for (let k = 0; k < n; k++) {
+    const v = r.volumeCurve[k];
+    const colour = closestSet.has(k) ? C.best : tiedSet.has(k) ? C.tie : C.idle;
+    add(`<rect x="${P2.x0}" y="${y(k) - barH / 2}" width="${Math.max(v * s2, 0)}" height="${barH}" fill="${colour}"><title>${k}¢: demand ${fmt(r.demand[k])}, supply ${fmt(r.supply[k])}, traded ${fmt(v)} kWh</title></rect>`);
+    const gap = Math.abs(r.demand[k] - r.supply[k]);
+    const prevGap = tiedSet.has(k - 1) ? Math.abs(r.demand[k - 1] - r.supply[k - 1]) : null;
+    if (tiedSet.has(k) && (r.tied.length <= 12 || prevGap === null || Math.abs(gap - prevGap) > TOL)) {
+      add(`<text x="${P2.x0 + v * s2 + 4}" y="${y(k) + 3.5}" font-size="9.5" fill="${closestSet.has(k) ? C.best : C.muted}">gap ${fmt(gap)}${r.tied.length > 12 ? " ↑" : ""}</text>`);
+    }
+  }
+  if (hasPrice) add(`<text x="${P2.x0 + r.volume * s2}" y="${y(r.level) + 5}" text-anchor="middle" font-size="15" font-weight="700" fill="#000">✕</text>`);
+  priceAxis(P2.x0);
+
+  // ---- panel 3: what each participant cleared
+  const P3 = { x0: 1070, x1: 1235 }, c3 = (P3.x0 + P3.x1) / 2;
+  const qmax = Math.max(1, ...r.quantities.map(Math.abs));
+  const s3 = (P3.x1 - P3.x0) / 2 / (qmax * 1.7);
+  add(`<text x="${(P3.x0 + P3.x1) / 2 - 40}" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="${C.ink}">3. cleared${hasPrice ? `, all at ${r.level}¢` : ": nothing"}</text>`);
+  const rowH3 = (bottom - top) / Math.max(1, rows3);
+  names.forEach((name, i) => {
+    const q = r.quantities[i], yc = top + (i + 0.5) * rowH3, bg = people[i].bg;
+    const colour = q > 1e-6 ? (bg ? BG_BUY_SHADES[0] : C.buy) : q < -1e-6 ? (bg ? BG_SELL_SHADES[0] : C.sell) : C.idle;
+    const label = bg ? name + "  background" : tag[i] + "  " + (name.length > 16 ? name.slice(0, 15) + "…" : name);
+    add(`<text x="${P3.x0 - 8}" y="${yc + 4}" text-anchor="end" font-size="12" fill="${bg ? C.muted : C.ink}"${bg ? ' font-style="italic"' : ""}><title>${esc(name)}</title>${esc(label)}</text>`);
+    const bar = `x="${q >= 0 ? c3 : c3 + q * s3}" y="${yc - Math.min(rowH3 * 0.3, 11)}" width="${Math.abs(q) * s3}" height="${Math.min(rowH3 * 0.6, 22)}"`;
+    add(`<rect ${bar} fill="${colour}"/>`);
+    if (bg) add(`<rect ${bar} fill="url(#hatch)"/>`);
+    add(`<text x="${c3 + q * s3 + (q >= 0 ? 4 : -4)}" y="${yc + 4}" text-anchor="${q >= 0 ? "start" : "end"}" font-size="11" fill="${C.ink}">${q > 0 ? "+" : ""}${fmt(q, 2)}</text>`);
+  });
+  add(`<line x1="${c3}" x2="${c3}" y1="${top}" y2="${bottom}" stroke="${C.ink}"/>`);
+  add(`<text x="${c3}" y="${bottom + 32}" text-anchor="middle" font-size="12" fill="${C.muted}">kWh (+ bought, − sold)</text>`);
+
+  const ly = H - 12;
+  let lx = 660;
+  for (const [c, t] of [[C.idle, "traded at this price"], [C.tie, "the most volume (tied)"], [C.best, "of those, demand and supply closest"]]) {
+    add(`<rect x="${lx}" y="${ly - 9}" width="11" height="11" fill="${c}"/><text x="${lx + 15}" y="${ly}" font-size="11" fill="${C.muted}">${t}</text>`);
+    lx += 22 + t.length * 5.6;
+  }
+  add(`<text x="60" y="${ly}" font-size="11" fill="${C.muted}">solid: the price a bid is placed at · faded: every price where it still counts</text>`);
+  if (hasBg) {
+    add(`<rect x="60" y="${ly - 27}" width="11" height="11" fill="${BG_BUY_SHADES[0]}"/><rect x="60" y="${ly - 27}" width="11" height="11" fill="url(#hatch)"/>`);
+    add(`<text x="75" y="${ly - 18}" font-size="11" fill="${C.muted}">hatched, greyer, lettered: background participants · bright, numbered: students</text>`);
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Market clearing figure">${HATCH}${out.join("")}</svg>`;
+}
+
+function summaryHTML(grid, r) {
+  if (r.level === null) return `<span><b>No trade.</b></span><span class="why">No buyer will pay what any seller asks, so nothing clears; everyone uses the grid.</span>`;
+  const lo = Math.min(...r.tied), hi = Math.max(...r.tied);
+  const clo = Math.min(...r.closest), chi = Math.max(...r.closest);
+  const d = r.demand[r.level], s = r.supply[r.level];
+  const side = Math.abs(d - s) < 1e-6 ? "demand and supply match exactly"
+             : d > s ? `demand is long: buyers get ${fmt(100 * r.volume / d, 0)}% of what they bid`
+                     : `supply is long: sellers sell ${fmt(100 * r.volume / s, 0)}% of what they offered`;
+  const range = lo === hi ? `Only ${lo}¢ trades the most (${fmt(r.volume)} kWh).`
+              : `Every price from ${lo}¢ to ${hi}¢ trades the most, ${fmt(r.volume)} kWh. ` +
+                (clo === lo && chi === hi ? `Demand and supply are equally close across that range, so the market takes the middle: ${r.level}¢.`
+                 : `Demand and supply are closest at ${clo === chi ? clo + "¢" : clo + "–" + chi + "¢"}` +
+                   (clo === chi ? "." : `, and the middle of those is ${r.level}¢.`));
+  return `<span>Clears at <b>${r.level}¢</b></span><span><b>${fmt(r.volume)} kWh</b> traded</span>` +
+         `<span>Grid price ${grid}¢</span><span>${side}</span><span class="why">${range}</span>`;
+}
+
+function bidText(bids) {
+  return bids.filter(([a, p]) => Number.isFinite(a) && Number.isFinite(p) && a !== 0)
+    .map(([a, p]) => `<span class="${a > 0 ? "buy" : "sell"}">${a > 0 ? "buy" : "sell"} ${fmt(Math.abs(a), 1)} @ ${Math.round(p)}¢</span>`)
+    .join(", ") || '<span class="none">no valid bids</span>';
+}
+
+// ---------------------------------------------------------------- page
+function render() {
+  const grid = latest.grid || 30;
+  const students = participants(latest);
+  const backgroundPeople = backgroundParticipants();
+  const people = students.concat(backgroundPeople);
+  document.getElementById("count").textContent = students.length;
+  document.getElementById("countlabel").textContent = students.length === 1 ? "participant has submitted" : "participants have submitted";
+  document.getElementById("names").innerHTML = students.map(p => `<span class="chip">${esc(p.name)}</span>`).join("");
+  document.getElementById("bgnote").textContent = backgroundPeople.length
+    ? `+ ${backgroundPeople.length} background participants (${BG_LABEL[background]})` : "No background participants";
+  document.getElementById("background").value = background;
+  document.getElementById("roundinfo").textContent = demo ? "Demo bids (made up)" :
+    roundStart ? "Round started " + new Date(roundStart).toLocaleTimeString() : "Counting all answers";
+  document.getElementById("waiting").hidden = revealed;
+  document.getElementById("result").hidden = !revealed;
+  if (!revealed) return;
+  if (!people.length) {
+    document.getElementById("summary").innerHTML = `<span class="why">No bids in this round yet.</span>`;
+    document.getElementById("figure").innerHTML = "";
+    document.getElementById("table").innerHTML = "";
+    return;
+  }
+  const r = clearMarket(people.map(p => vectorOf(p.bids, grid)));
+  document.getElementById("summary").innerHTML = summaryHTML(grid, r);
+  document.getElementById("figure").innerHTML = drawFigure(grid, people, r);
+  document.getElementById("table").innerHTML =
+    `<tr><th>#</th><th>participant</th><th>bids</th><th>result</th></tr>` +
+    people.map((p, i) => {
+      const q = r.quantities[i];
+      const res = q > 1e-6 ? `<span class="buy">bought ${fmt(q, 2)} kWh</span>` : q < -1e-6 ? `<span class="sell">sold ${fmt(-q, 2)} kWh</span>` : `<span class="none">no trade</span>`;
+      return `<tr${p.bg ? ' class="bg"' : ""}><td class="num">${p.bg ? p.name : i + 1}</td><td>${p.bg ? "background " + p.name : esc(p.name)}</td>` +
+             `<td>${bidText(p.bids)}</td><td>${res}${r.level !== null && Math.abs(q) > 1e-6 ? ` at ${r.level}¢` : ""}</td></tr>`;
+    }).join("");
+}
+
+document.getElementById("source").value = source;
+document.getElementById("connect").onclick = () => {
+  source = document.getElementById("source").value.trim();
+  store.set("source", source);
+  demo = false;
+  setStatus("Connecting…");
+  load();
+};
+document.getElementById("demo").onclick = () => { demo = true; setStatus("Demo bids: made up, not from the form."); load(); };
+document.getElementById("newround").onclick = () => {
+  roundStart = Date.now();
+  store.set("roundStart", String(roundStart));
+  revealed = false;
+  render();
+};
+document.getElementById("background").onchange = e => {
+  background = e.target.value;
+  store.set("background", background);
+  render();
+};
+document.getElementById("reveal").onclick = () => { revealed = true; render(); };
+document.getElementById("hide").onclick = () => { revealed = false; render(); };
+
+load();
+timer = setInterval(() => { if (!document.hidden && !demo) load(); }, 5000);
+</script>
+</body>
+</html>
