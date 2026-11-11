@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market Clearing Explorer</title>
+<style>
+  :root {
+    --bg: #fbfbf9; --panel: #ffffff; --ink: #1f2328; --muted: #5b6168; --line: #e3e3df;
+    --buy: #c0392b; --sell: #1e8449; --tie: #f0b27a; --best: #d35400; --idle: #c3c8cd;
+    --accent: #2b6cb0; --band: rgba(245, 203, 167, 0.35); --bad: #b42318;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 16px; max-width: 900px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; }
+  .tab { border: 1px solid transparent; border-bottom: none; background: none; padding: 8px 14px;
+         font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; border-radius: 6px 6px 0 0; }
+  .tab[aria-selected="true"] { background: var(--panel); border-color: var(--line); color: var(--ink);
+         margin-bottom: -1px; }
+  .scenario-head { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; }
+  .scenario-head p { margin: 0 0 6px; max-width: 880px; }
+  .try { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+  .try li { margin: 2px 0; }
+  .reset { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 6px; cursor: pointer;
+           border: 1px solid var(--accent); background: var(--panel); color: var(--accent); white-space: nowrap; }
+  .reset:hover { background: var(--accent); color: #fff; }
+  .summary { margin: 12px 0 8px; padding: 9px 12px; background: var(--panel); border: 1px solid var(--line);
+             border-radius: 8px; display: flex; gap: 22px; flex-wrap: wrap; }
+  .summary b { font-size: 16px; }
+  .summary .why { color: var(--muted); flex-basis: 100%; }
+  .figure { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+  .figure svg { display: block; width: 100%; height: auto; }
+  .participants { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+  @media (max-width: 1050px) { .participants { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px)  { .participants { grid-template-columns: 1fr; } .scenario-head { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .card h3 { margin: 0 0 6px; font-size: 14px; display: flex; justify-content: space-between; gap: 6px; }
+  .card h3 .out { font-weight: 600; }
+  .out.buy { color: var(--buy); } .out.sell { color: var(--sell); } .out.none { color: var(--muted); }
+  .badge { font-size: 11px; font-weight: 600; color: #7a4b00; background: #fdebd0; border-radius: 4px; padding: 0 5px; }
+  .row { display: grid; grid-template-columns: 62px minmax(0, 1fr) 14px minmax(0, 1fr); gap: 4px;
+         align-items: center; margin: 3px 0; }
+  .row span { color: var(--muted); text-align: center; font-size: 12px; }
+  select, input { font: inherit; font-size: 13px; padding: 3px 5px; border: 1px solid #c9ccd1; border-radius: 4px;
+                  background: #fff; color: var(--ink); width: 100%; min-width: 0; }
+  select.buy { color: var(--buy); font-weight: 600; } select.sell { color: var(--sell); font-weight: 600; }
+  input.bad { border-color: var(--bad); background: #fff1f0; }
+  .unit { position: relative; }
+  .unit input { padding-right: 30px; }
+  .unit::after { content: attr(data-unit); position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+                 color: var(--muted); font-size: 11px; pointer-events: none; }
+  .notes { color: var(--muted); font-size: 13px; margin-top: 18px; max-width: 900px; }
+  .notes h2 { font-size: 15px; color: var(--ink); margin: 0 0 4px; }
+  .notes ol { padding-left: 20px; margin: 4px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Market clearing explorer</h1>
+  <p class="lede">Eight participants, up to five bids each, one hour of the course market. Change any bid,
+  the amount or the price, and the market clears again: the figure shows every order over the prices where it
+  counts, how much would trade at each price, and what each participant ends up with. Each tab starts from a
+  different market. <b>Reset</b> puts the tab back to its starting bids.</p>
+
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <section id="view"></section>
+
+  <div class="notes">
+    <h2>How the market clears</h2>
+    <ol>
+      <li><b>Net positions.</b> Each participant's bids are reduced to its net position at every price: a buyer
+        or a seller there, never both. A buy counts at its price and every lower price, a sell at its price and
+        every higher price.</li>
+      <li><b>Most volume.</b> Of all prices from 0¢ to the grid price, the market picks the ones that trade the
+        most energy (demand and supply at that price, whichever is smaller).</li>
+      <li><b>Closest to the crossing.</b> If several prices trade that most, it takes those where demand and
+        supply are closest, and the middle of them if that still leaves several.</li>
+      <li><b>One price for everyone.</b> Everyone in the money trades at that price, whatever they bid. The short
+        side is filled completely; the long side shares what there is in proportion to what each bid.</li>
+    </ol>
+    <p>This page uses the same clearing as <code>clear()</code> in <code>src/annex96p2p/market.py</code>,
+    ported line by line.</p>
+  </div>
+</main>
+
+<script>
+// BEGIN MARKET -- a port of annex96p2p.market.clear(); keep in step with it.
+const TOL = 1e-9;
+
+// vectors: one array per participant, one signed kWh per price level (+ buy, - sell).
+function clearMarket(vectors) {
+  const m = vectors.length, n = vectors[0].length;
+  const buyAt = [], sellAt = [];
+  for (const v of vectors) {
+    // Net the bid: wants = bought at this level or above, offers = sold at this level or below.
+    const wants = new Array(n).fill(0), offers = new Array(n).fill(0);
+    let acc = 0;
+    for (let k = n - 1; k >= 0; k--) { acc += Math.max(v[k], 0); wants[k] = acc; }
+    acc = 0;
+    for (let k = 0; k < n; k++) { acc += Math.max(-v[k], 0); offers[k] = acc; }
+    const buys = wants.map((w, k) => Math.max(w - offers[k], 0));
+    const sells = wants.map((w, k) => Math.max(offers[k] - w, 0));
+    buyAt.push(buys.map((b, k) => Math.max(b - (k + 1 < n ? buys[k + 1] : 0), 0)));
+    sellAt.push(sells.map((s, k) => Math.max(s - (k > 0 ? sells[k - 1] : 0), 0)));
+  }
+  const demand = new Array(n).fill(0), supply = new Array(n).fill(0);
+  let acc = 0;
+  for (let k = n - 1; k >= 0; k--) { for (let i = 0; i < m; i++) acc += buyAt[i][k]; demand[k] = acc; }
+  acc = 0;
+  for (let k = 0; k < n; k++) { for (let i = 0; i < m; i++) acc += sellAt[i][k]; supply[k] = acc; }
+  const volume = demand.map((d, k) => Math.min(d, supply[k]));
+  const best = Math.max(...volume);
+  const result = { level: null, volume: 0, quantities: new Array(m).fill(0), demand, supply, volumeCurve: volume,
+                   buyAt, sellAt, tied: [], closest: [] };
+  if (best <= TOL) return result;
+
+  let tied = [];
+  for (let k = 0; k < n; k++) if (volume[k] >= best - TOL) tied.push(k);
+  const gaps = tied.map(k => Math.abs(demand[k] - supply[k]));
+  const smallest = Math.min(...gaps);
+  const closest = tied.filter((k, i) => gaps[i] <= smallest + TOL);
+  const j = closest[Math.floor(closest.length / 2)];
+
+  const cleared = volume[j];
+  const buyFill = demand[j] > TOL ? cleared / demand[j] : 0;
+  const sellFill = supply[j] > TOL ? cleared / supply[j] : 0;
+  const q = new Array(m).fill(0);
+  for (let i = 0; i < m; i++) {
+    let eb = 0, es = 0;
+    for (let k = j; k < n; k++) eb += buyAt[i][k];
+    for (let k = 0; k <= j; k++) es += sellAt[i][k];
+    q[i] = eb * buyFill - es * sellFill;
+  }
+  // Kill floating point drift so the market balances exactly.
+  const residual = q.reduce((a, b) => a + b, 0);
+  if (Math.abs(residual) > TOL) {
+    let big = 0;
+    for (let i = 1; i < m; i++) if (Math.abs(q[i]) > Math.abs(q[big])) big = i;
+    q[big] -= residual;
+  }
+  return Object.assign(result, { level: j, volume: cleared, quantities: q, tied, closest });
+}
+// END MARKET
+
+const NAMES = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const SLOTS = 5;
+
+const SCENARIOS = [
+  { id: "normal", title: "Normal market", grid: 30,
+    text: "A mix of sellers and buyers with a few bids each, spread over the whole price range. The market " +
+          "clears at a clear crossing; most single changes move the price by a cent or two, a few by more.",
+    tries: ["Move D's 20¢ sale down to 16¢: the price drops from 17¢ to 15¢.",
+            "Let F buy 8 kWh instead of 5: the price stays at 17¢, but 2 kWh more trade.",
+            "Raise C's ask from 12¢ to 18¢: the price rises by a cent."],
+    bids: [[["sell", 4, 1]], [["sell", 3, 6], ["sell", 3, 15]], [["sell", 4, 12]], [["buy", 5, 4], ["sell", 4, 20]],
+           [["buy", 4, 27], ["buy", 2, 14]], [["buy", 5, 24]], [["buy", 3, 18], ["buy", 2, 9]],
+           [["buy", 6, 3], ["sell", 3, 25]]] },
+  { id: "stable", title: "Very stable market", grid: 30,
+    text: "Four sellers and four buyers, each with five small bids a cent or two apart, all between 13¢ and 23¢. " +
+          "So many bids are close to the crossing that no single one is decisive: change one, and another " +
+          "takes its place at almost the same price.",
+    tries: ["Double E's 23¢ bid to 3 kWh: the price stays at 18¢.",
+            "Move A's cheapest ask from 13¢ all the way up to 21¢: still 18¢, with 1.5 kWh less traded.",
+            "Triple F's 18¢ bid to 4.5 kWh: still 18¢."],
+    bids: [[["sell", 1.5, 13], ["sell", 1.5, 15], ["sell", 1.5, 17], ["sell", 1.5, 19], ["sell", 1.5, 21]],
+           [["sell", 1.5, 14], ["sell", 1.5, 16], ["sell", 1.5, 18], ["sell", 1.5, 20], ["sell", 1.5, 22]],
+           [["sell", 1.5, 13], ["sell", 1.5, 15], ["sell", 1.5, 16], ["sell", 1.5, 18], ["sell", 1.5, 20]],
+           [["sell", 1.5, 14], ["sell", 1.5, 15], ["sell", 1.5, 17], ["sell", 1.5, 19], ["sell", 1.5, 21]],
+           [["buy", 1.5, 23], ["buy", 1.5, 21], ["buy", 1.5, 19], ["buy", 1.5, 17], ["buy", 1.5, 15]],
+           [["buy", 1.5, 22], ["buy", 1.5, 20], ["buy", 1.5, 18], ["buy", 1.5, 16], ["buy", 1.5, 14]],
+           [["buy", 1.5, 23], ["buy", 1.5, 21], ["buy", 1.5, 20], ["buy", 1.5, 18], ["buy", 1.5, 16]],
+           [["buy", 1.5, 22], ["buy", 1.5, 21], ["buy", 1.5, 19], ["buy", 1.5, 17], ["buy", 1.5, 15]]] },
+  { id: "volatile", title: "Very volatile market", grid: 30,
+    text: "Two big cheap sellers and two big expensive buyers, exactly balanced at 10 kWh, so buying and selling " +
+          "bids overlap across almost the whole price range: every price from 3¢ to 27¢ trades the same 10 kWh. " +
+          "Tip the balance by a single kWh and the price jumps far along that range.",
+    tries: ["Let E buy 4 kWh instead of 5: the price falls from 13¢ to 6¢.",
+            "Let E buy 6 kWh instead of 5: the price rises to 20¢.",
+            "Let A sell 4 kWh instead of 5: the price rises to 20¢.",
+            "Lower C's ask from 20¢ to 10¢: the price falls to 8¢."],
+    bids: [[["sell", 5, 2]], [["sell", 5, 3]], [["sell", 2, 20]], [["sell", 2, 21]],
+           [["buy", 5, 28]], [["buy", 5, 27]], [["buy", 2, 6]], [["buy", 2, 5]]] },
+];
+
+// ---------------------------------------------------------------- state
+const clone = x => JSON.parse(JSON.stringify(x));
+function freshBids(sc) {
+  return NAMES.map((_, i) => Array.from({ length: SLOTS }, (_, s) => {
+    const b = sc.bids[i][s];
+    return b ? { side: b[0], kwh: String(b[1]), price: String(b[2]) } : { side: "", kwh: "", price: "" };
+  }));
+}
+const state = {};
+for (const sc of SCENARIOS) state[sc.id] = freshBids(sc);
+// A link can open a tab directly: market_clearing_explorer.html#volatile
+let current = SCENARIOS.some(s => s.id === location.hash.slice(1)) ? location.hash.slice(1) : SCENARIOS[0].id;
+
+// A bid slot as the market sees it: a price level and a signed quantity, or nothing.
+function parseSlot(slot, grid) {
+  if (slot.side !== "buy" && slot.side !== "sell") return null;
+  const kwh = parseFloat(slot.kwh), price = parseFloat(slot.price);
+  if (!(kwh > 0) || !Number.isFinite(price)) return null;
+  const level = Math.min(grid, Math.max(0, Math.round(price)));    // snap to a legal 1¢ level
+  return { level, kwh: slot.side === "buy" ? kwh : -kwh };
+}
+
+function vectorsFor(sc) {
+  return state[sc.id].map(slots => {
+    const v = new Array(sc.grid + 1).fill(0);
+    for (const slot of slots) { const p = parseSlot(slot, sc.grid); if (p) v[p.level] += p.kwh; }
+    return v;
+  });
+}
+
+function overlaps(slots, grid) {
+  const parsed = slots.map(s => parseSlot(s, grid)).filter(Boolean);
+  const buys = parsed.filter(p => p.kwh > 0).map(p => p.level);
+  const sells = parsed.filter(p => p.kwh < 0).map(p => p.level);
+  return buys.length && sells.length && Math.max(...buys) >= Math.min(...sells);
+}
+
+// ---------------------------------------------------------------- drawing
+const C = { buy: "#c0392b", sell: "#1e8449", tie: "#f0b27a", best: "#d35400", idle: "#c3c8cd",
+            ink: "#1f2328", muted: "#5b6168", line: "#e3e3df" };
+const BUY_SHADES = ["#922b21", "#d4513f", "#e88e7d", "#b03a2e", "#f0b3a6"];
+const SELL_SHADES = ["#145a32", "#2e9455", "#7cc08f", "#1d6e3e", "#b2dbbd"];
+const fmt = (x, d = 1) => (Math.abs(x) < 0.005 ? 0 : x).toFixed(d);
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+function niceStep(max) {
+  const raw = max / 4, pow = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+  return [1, 2, 5, 10].map(f => f * pow).find(s => s >= raw) || raw;
+}
+
+function drawFigure(sc, r) {
+  const W = 1240, H = 430, top = 40, bottom = 372, n = sc.grid + 1;
+  const rowH = (bottom - top) / n, barH = rowH * 0.8;
+  const y = k => bottom - (k + 0.5) * rowH;                    // centre of price level k
+  const out = [];
+  const add = s => out.push(s);
+  const priceAxis = x0 => {
+    for (let k = 0; k <= sc.grid; k += 5) {
+      add(`<text x="${x0 - 6}" y="${y(k) + 4}" text-anchor="end" font-size="11" fill="${C.muted}">${k}¢</text>`);
+    }
+  };
+  const hasPrice = r.level !== null;
+  const band = hasPrice ? [Math.min(...r.tied), Math.max(...r.tied)] : null;
+
+  // ---- panel 1: every netted order over its reach; supply left, demand right
+  const P1 = { x0: 60, x1: 600 }, c1 = (P1.x0 + P1.x1) / 2;
+  const maxSide = Math.max(1, ...r.demand, ...r.supply);
+  const s1 = (P1.x1 - P1.x0) / 2 / (maxSide * 1.08);
+  add(`<text x="${c1}" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="${C.ink}">1. every order over its reach: supply ← green | red → demand</text>`);
+  if (band) add(`<rect x="${P1.x0}" y="${y(band[1]) - rowH / 2}" width="${P1.x1 - P1.x0}" height="${(band[1] - band[0] + 1) * rowH}" fill="rgba(245,203,167,0.4)"/>`);
+  const step1 = niceStep(maxSide);
+  for (let t = 0; t <= maxSide * 1.08; t += step1) {
+    for (const sgn of t === 0 ? [1] : [1, -1]) {
+      const x = c1 + sgn * t * s1;
+      add(`<line x1="${x}" x2="${x}" y1="${top}" y2="${bottom}" stroke="${C.line}"/>`);
+      add(`<text x="${x}" y="${bottom + 15}" text-anchor="middle" font-size="11" fill="${C.muted}">${+t.toFixed(2)}</text>`);
+    }
+  }
+  add(`<text x="${c1}" y="${bottom + 32}" text-anchor="middle" font-size="12" fill="${C.muted}">kWh that count at each price</text>`);
+  const orders = [];
+  r.buyAt.forEach((row, i) => row.forEach((q, k) => { if (q > TOL) orders.push({ i, k, q, buy: true }); }));
+  r.sellAt.forEach((row, i) => row.forEach((q, k) => { if (q > TOL) orders.push({ i, k, q, buy: false }); }));
+  for (const buy of [true, false]) {
+    const group = orders.filter(o => o.buy === buy).sort((a, b) => buy ? (b.k - a.k || a.i - b.i) : (a.k - b.k || a.i - b.i));
+    const offset = new Array(n).fill(0), shades = buy ? BUY_SHADES : SELL_SHADES, sgn = buy ? 1 : -1;
+    group.forEach((o, idx) => {
+      const colour = shades[idx % shades.length];
+      const tip = `${NAMES[o.i]}: ${buy ? "buy" : "sell"} ${fmt(o.q, 2)} kWh, ${buy ? "up to" : "from"} ${o.k}¢`;
+      for (let k = 0; k < n; k++) {
+        const active = buy ? k <= o.k : k >= o.k;
+        if (!active) continue;
+        const x = sgn > 0 ? c1 + offset[k] * s1 : c1 - (offset[k] + o.q) * s1;
+        const solid = k === o.k;
+        add(`<rect x="${x}" y="${y(k) - barH / 2}" width="${o.q * s1}" height="${barH}" fill="${colour}" fill-opacity="${solid ? 1 : 0.3}"${solid ? ' stroke="#000" stroke-width="0.7"' : ""}><title>${esc(tip)}</title></rect>`);
+        const light = idx % shades.length === 2 || idx % shades.length === 4;   // the two pale shades
+        if (solid && o.q * s1 >= 9) add(`<text x="${x + o.q * s1 / 2}" y="${y(k) + 3.5}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${light ? C.ink : "#fff"}" pointer-events="none">${NAMES[o.i]}</text>`);
+        offset[k] += o.q;
+      }
+    });
+  }
+  add(`<line x1="${c1}" x2="${c1}" y1="${top}" y2="${bottom}" stroke="${C.ink}"/>`);
+  if (hasPrice) {
+    add(`<line x1="${P1.x0}" x2="${P1.x1}" y1="${y(r.level)}" y2="${y(r.level)}" stroke="#000" stroke-dasharray="3 3"/>`);
+    const label = `clears at ${r.level}¢: ${fmt(r.volume)} kWh`;
+    add(`<rect x="${P1.x1 - 158}" y="${y(r.level) - 21}" width="154" height="16" rx="3" fill="#fff" fill-opacity="0.9"/>`);
+    add(`<text x="${P1.x1 - 81}" y="${y(r.level) - 9}" text-anchor="middle" font-size="12" font-weight="700" fill="#000">${label}</text>`);
+  }
+  priceAxis(P1.x0);
+  add(`<text x="16" y="${(top + bottom) / 2}" transform="rotate(-90 16 ${(top + bottom) / 2})" text-anchor="middle" font-size="12" fill="${C.muted}">price</text>`);
+
+  // ---- panel 2: traded volume at every price
+  const P2 = { x0: 660, x1: 940 };
+  const vmax = Math.max(1, ...r.volumeCurve);
+  const s2 = (P2.x1 - P2.x0 - 44) / vmax;
+  add(`<text x="${(P2.x0 + P2.x1) / 2}" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="${C.ink}">2. traded = min(demand, supply)</text>`);
+  const step2 = niceStep(vmax);
+  for (let t = 0; t <= vmax; t += step2) {
+    const x = P2.x0 + t * s2;
+    add(`<line x1="${x}" x2="${x}" y1="${top}" y2="${bottom}" stroke="${C.line}"/>`);
+    add(`<text x="${x}" y="${bottom + 15}" text-anchor="middle" font-size="11" fill="${C.muted}">${+t.toFixed(2)}</text>`);
+  }
+  add(`<text x="${(P2.x0 + P2.x1) / 2}" y="${bottom + 32}" text-anchor="middle" font-size="12" fill="${C.muted}">kWh that would trade at this price</text>`);
+  const tiedSet = new Set(r.tied), closestSet = new Set(r.closest);
+  for (let k = 0; k < n; k++) {
+    const v = r.volumeCurve[k];
+    const colour = closestSet.has(k) ? C.best : tiedSet.has(k) ? C.tie : C.idle;
+    const tip = `${k}¢: demand ${fmt(r.demand[k])}, supply ${fmt(r.supply[k])}, traded ${fmt(v)} kWh`;
+    add(`<rect x="${P2.x0}" y="${y(k) - barH / 2}" width="${Math.max(v * s2, 0)}" height="${barH}" fill="${colour}"><title>${esc(tip)}</title></rect>`);
+    // Label the gap on tied rows; with many tied rows, only where it changes.
+    const gap = Math.abs(r.demand[k] - r.supply[k]);
+    const prevGap = tiedSet.has(k - 1) ? Math.abs(r.demand[k - 1] - r.supply[k - 1]) : null;
+    if (tiedSet.has(k) && (r.tied.length <= 12 || prevGap === null || Math.abs(gap - prevGap) > TOL)) {
+      add(`<text x="${P2.x0 + v * s2 + 4}" y="${y(k) + 3.5}" font-size="9.5" fill="${closestSet.has(k) ? C.best : C.muted}">gap ${fmt(gap)}${r.tied.length > 12 ? " ↑" : ""}</text>`);
+    }
+  }
+  if (hasPrice) add(`<text x="${P2.x0 + r.volume * s2}" y="${y(r.level) + 5}" text-anchor="middle" font-size="15" font-weight="700" fill="#000">✕</text>`);
+  priceAxis(P2.x0);
+
+  // ---- panel 3: what each participant cleared
+  const P3 = { x0: 1000, x1: 1230 }, c3 = (P3.x0 + P3.x1) / 2;
+  const qmax = Math.max(1, ...r.quantities.map(Math.abs));
+  const s3 = (P3.x1 - P3.x0) / 2 / (qmax * 1.55);
+  add(`<text x="${c3}" y="18" text-anchor="middle" font-size="13" font-weight="600" fill="${C.ink}">3. cleared${hasPrice ? `, all at ${r.level}¢` : ": nothing"}</text>`);
+  const rowH3 = (bottom - top) / NAMES.length;
+  NAMES.forEach((name, i) => {
+    const q = r.quantities[i], yc = top + (i + 0.5) * rowH3;
+    const colour = q > 1e-6 ? C.buy : q < -1e-6 ? C.sell : C.idle;
+    add(`<text x="${P3.x0 - 8}" y="${yc + 4}" text-anchor="end" font-size="12" fill="${C.ink}">${name}</text>`);
+    add(`<rect x="${q >= 0 ? c3 : c3 + q * s3}" y="${yc - rowH3 * 0.3}" width="${Math.abs(q) * s3}" height="${rowH3 * 0.6}" fill="${colour}"/>`);
+    add(`<text x="${c3 + q * s3 + (q >= 0 ? 4 : -4)}" y="${yc + 4}" text-anchor="${q >= 0 ? "start" : "end"}" font-size="11" fill="${C.ink}">${q > 0 ? "+" : ""}${fmt(q, 2)}</text>`);
+  });
+  add(`<line x1="${c3}" x2="${c3}" y1="${top}" y2="${bottom}" stroke="${C.ink}"/>`);
+  add(`<text x="${c3}" y="${bottom + 32}" text-anchor="middle" font-size="12" fill="${C.muted}">kWh (+ bought, − sold)</text>`);
+
+  // ---- legend
+  const ly = H - 14;
+  const legend = [[C.idle, "traded at this price"], [C.tie, "the most volume (tied)"], [C.best, "of those, demand and supply closest"]];
+  let lx = 660;
+  for (const [c, t] of legend) {
+    add(`<rect x="${lx}" y="${ly - 9}" width="11" height="11" fill="${c}"/>`);
+    add(`<text x="${lx + 15}" y="${ly}" font-size="11" fill="${C.muted}">${t}</text>`);
+    lx += 22 + t.length * 5.6;
+  }
+  add(`<text x="60" y="${ly}" font-size="11" fill="${C.muted}">solid: the price a bid is placed at · faded: every price where it still counts · hover for details</text>`);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Market clearing figure">${out.join("")}</svg>`;
+}
+
+// ---------------------------------------------------------------- page
+function summaryHTML(sc, r) {
+  if (r.level === null) {
+    return `<span><b>No trade.</b></span><span class="why">No buyer will pay what any seller asks, so nothing clears; everyone uses the grid.</span>`;
+  }
+  const lo = Math.min(...r.tied), hi = Math.max(...r.tied);
+  const clo = Math.min(...r.closest), chi = Math.max(...r.closest);
+  const d = r.demand[r.level], s = r.supply[r.level];
+  const side = Math.abs(d - s) < 1e-6 ? "demand and supply match exactly"
+             : d > s ? `demand is long: buyers get ${fmt(100 * r.volume / d, 0)}% of what they bid`
+                     : `supply is long: sellers sell ${fmt(100 * r.volume / s, 0)}% of what they offered`;
+  const range = lo === hi ? `Only ${lo}¢ trades the most (${fmt(r.volume)} kWh).`
+              : `Every price from ${lo}¢ to ${hi}¢ trades the most, ${fmt(r.volume)} kWh. ` +
+                (clo === lo && chi === hi ? `Demand and supply are equally close across that range, so the market takes the middle: ${r.level}¢.`
+                 : `Demand and supply are closest at ${clo === chi ? clo + "¢" : clo + "–" + chi + "¢"}` +
+                   (clo === chi ? "." : `, and the middle of those is ${r.level}¢.`));
+  return `<span>Clears at <b>${r.level}¢</b></span><span><b>${fmt(r.volume)} kWh</b> traded</span>` +
+         `<span>Grid price ${sc.grid}¢</span><span>${side}</span><span class="why">${range}</span>`;
+}
+
+function render() {
+  const sc = SCENARIOS.find(s => s.id === current);
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", t.dataset.id === current));
+  const view = document.getElementById("view");
+  view.innerHTML = `
+    <div class="scenario-head">
+      <div><p>${sc.text}</p><p><b>Try:</b></p><ul class="try">${sc.tries.map(t => `<li>${t}</li>`).join("")}</ul></div>
+      <button class="reset" id="reset">Reset ${sc.title.toLowerCase()}</button>
+    </div>
+    <div class="summary" id="summary"></div>
+    <div class="figure" id="figure"></div>
+    <div class="participants" id="participants"></div>`;
+  document.getElementById("reset").onclick = () => { state[sc.id] = freshBids(sc); render(); };
+  const box = document.getElementById("participants");
+  state[sc.id].forEach((slots, i) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<h3><span>Participant ${NAMES[i]} <span class="badge" hidden>netted</span></span><span class="out"></span></h3>` +
+      slots.map((slot, s) => `
+        <div class="row">
+          <select data-s="${s}" data-f="side" aria-label="Participant ${NAMES[i]} bid ${s + 1} side">
+            <option value=""${slot.side === "" ? " selected" : ""}>—</option>
+            <option value="buy"${slot.side === "buy" ? " selected" : ""}>buy</option>
+            <option value="sell"${slot.side === "sell" ? " selected" : ""}>sell</option>
+          </select>
+          <label class="unit" data-unit="kWh"><input data-s="${s}" data-f="kwh" type="number" min="0" step="0.5" value="${slot.kwh}" aria-label="Participant ${NAMES[i]} bid ${s + 1} kWh"></label>
+          <span>at</span>
+          <label class="unit" data-unit="¢"><input data-s="${s}" data-f="price" type="number" min="0" max="${sc.grid}" step="1" value="${slot.price}" aria-label="Participant ${NAMES[i]} bid ${s + 1} price in cents"></label>
+        </div>`).join("");
+    // "input" fires while typing; "change" when a field is left or a side is picked.
+    const edit = (e, done) => {
+      const el = e.target, s = +el.dataset.s;
+      if (!el.dataset.f) return;
+      if (done && el.dataset.f === "price" && el.value !== "" && Number.isFinite(parseFloat(el.value))) {
+        el.value = Math.min(sc.grid, Math.max(0, Math.round(parseFloat(el.value))));   // snap to a legal level
+      }
+      state[sc.id][i][s][el.dataset.f] = el.value;
+      update();
+    };
+    card.addEventListener("input", e => edit(e, false));
+    card.addEventListener("change", e => edit(e, true));
+    box.appendChild(card);
+  });
+  update();
+}
+
+function update() {
+  const sc = SCENARIOS.find(s => s.id === current);
+  const r = clearMarket(vectorsFor(sc));
+  document.getElementById("summary").innerHTML = summaryHTML(sc, r);
+  document.getElementById("figure").innerHTML = drawFigure(sc, r);
+  document.querySelectorAll("#participants .card").forEach((card, i) => {
+    const q = r.quantities[i], out = card.querySelector(".out");
+    out.className = "out " + (q > 1e-6 ? "buy" : q < -1e-6 ? "sell" : "none");
+    out.textContent = q > 1e-6 ? `bought ${fmt(q, 2)} kWh` : q < -1e-6 ? `sold ${fmt(-q, 2)} kWh` : "no trade";
+    card.querySelector(".badge").hidden = !overlaps(state[sc.id][i], sc.grid);
+    card.querySelectorAll("select").forEach(sel => { sel.className = sel.value; });
+    card.querySelectorAll("input").forEach(inp => {
+      const v = inp.value, f = inp.dataset.f;
+      const bad = v !== "" && (!Number.isFinite(parseFloat(v)) || parseFloat(v) < 0 ||
+                               (f === "price" && parseFloat(v) > sc.grid));
+      inp.classList.toggle("bad", bad);
+      inp.title = bad ? (f === "price" ? `Prices run from 0¢ to the grid price, ${sc.grid}¢; this one is clipped.` : "Use a positive amount.") : "";
+    });
+  });
+}
+
+const tabs = document.getElementById("tabs");
+for (const sc of SCENARIOS) {
+  const b = document.createElement("button");
+  b.className = "tab"; b.setAttribute("role", "tab"); b.dataset.id = sc.id; b.textContent = sc.title;
+  b.onclick = () => { current = sc.id; history.replaceState(null, "", "#" + sc.id); render(); };
+  tabs.appendChild(b);
+}
+render();
+</script>
+</body>
+</html>
