@@ -22,6 +22,17 @@ Everything in this README is about that market unless it says otherwise.
 [Writing a submission](#writing-a-submission) → [The API in full](#the-api-in-full).
 Then [Debugging your agent](#debugging-your-agent) when something looks wrong.
 
+**Two hands-on companions:**
+
+- [docs/building_an_agent.ipynb](docs/building_an_agent.ipynb), a tutorial
+  notebook: how an agent is put together, how to build bids and how they
+  clear, step by step in code. GitHub shows it with its outputs; run it from
+  your clone with `jupyter lab docs/building_an_agent.ipynb`.
+- [docs/market_clearing_explorer.html](docs/market_clearing_explorer.html), an
+  interactive page: eight participants' bids in three example markets; change
+  any bid and watch the market clear again. Download it or open it from your
+  clone (GitHub shows HTML files as source); it works offline.
+
 ---
 
 ## Getting set up
@@ -381,6 +392,12 @@ several prices are equally close, it takes the middle of those. So in the
 hourly page's bid heatmap for the whole market, the clearing price sits next
 to the boundary between red (more buying than selling) and green.
 
+To see all of this at work, open the
+[market clearing explorer](docs/market_clearing_explorer.html): change any
+participant's bid and the market clears again, with the tie-break drawn out.
+Its normal, very stable and very volatile markets show how much one bid can
+move the price.
+
 ### The order within an hour
 
 ```
@@ -418,6 +435,10 @@ your bid and your dispatch agree with each other.
 ---
 
 ## Writing a submission
+
+The [tutorial notebook](docs/building_an_agent.ipynb) builds an agent step
+by step, from an empty one to a submission file run in the course market.
+The short version follows.
 
 One file in `submissions/`, two module-level names, two methods:
 
@@ -510,7 +531,6 @@ Convenience properties:
 | `passive_net_kwh` | net energy if you leave heat pump and battery idle. **Start here** — positive means you must buy, negative means you have surplus. |
 | `has_battery` `has_pv` | booleans |
 | `comfort_mid` | midpoint of the band |
-| `is_uncomfortable` | currently outside the band |
 
 ### `mkt` — a `MarketInfo`
 
