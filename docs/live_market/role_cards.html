@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Role Cards</title>
+<style>
+  :root {
+    --bg: #fbfbf9; --panel: #ffffff; --ink: #1f2328; --muted: #5b6168; --line: #e3e3df;
+    --buy: #c0392b; --sell: #1e8449; --accent: #2b6cb0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1320px; margin: 0 auto; padding: 18px 16px 40px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 26px 0 8px; }
+  .lead { color: var(--muted); margin: 0 0 12px; max-width: 900px; }
+  .controls { display: flex; gap: 10px 16px; flex-wrap: wrap; align-items: center; margin: 12px 0;
+              padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .controls label { display: flex; gap: 6px; align-items: center; }
+  .controls input, .controls select { font: inherit; padding: 5px 8px; border: 1px solid #c9ccd1; border-radius: 5px; background: #fff; }
+  .controls input[type=number] { width: 70px; }
+  .controls input[type=text] { width: 130px; }
+  button { font: inherit; font-weight: 600; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+           border: 1px solid var(--accent); background: var(--panel); color: var(--accent); }
+  button:hover { background: var(--accent); color: #fff; }
+  .summary { padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+             display: flex; gap: 22px; flex-wrap: wrap; font-size: 16px; }
+  .summary b { font-size: 19px; }
+  .note { color: var(--muted); font-size: 13px; margin: 8px 0 0; max-width: 900px; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 14px; }
+  th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; background: #f6f6f3; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .buy { color: var(--buy); font-weight: 600; } .sell { color: var(--sell); font-weight: 600; } .none { color: var(--muted); }
+  tr.bg td { color: var(--muted); }
+
+  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid #c9ccd1; border-radius: 8px; padding: 12px 14px;
+          display: flex; flex-direction: column; gap: 8px; break-inside: avoid; }
+  .card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .card .no { font-size: 22px; font-weight: 700; }
+  .card .deck { color: var(--muted); font-size: 12px; }
+  .card h3 { margin: 0; font-size: 17px; }
+  .card .side { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .card p { margin: 0; font-size: 13.5px; }
+  .card table { font-size: 13px; border: 1px solid var(--line); }
+  .card th, .card td { padding: 3px 8px; }
+  .card table { table-layout: fixed; }
+  .card th:first-child { width: 40%; }
+  .card td.num { white-space: normal; }
+  .card .rule { font-size: 12.5px; color: var(--muted); }
+  .card .write { font-size: 12.5px; border-top: 1px dashed #c9ccd1; padding-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; }
+  [hidden] { display: none !important; }
+
+  @media print {
+    @page { size: A4; margin: 10mm; }
+    body { background: #fff; font-size: 12px; }
+    main { max-width: none; padding: 0; }
+    h1, .controls, .lead, .noprint { display: none !important; }
+    body.print-cards #key, body.print-key #cardsection { display: none !important; }
+    #cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6mm; }
+    .card { height: 132mm; border-style: dashed; border-radius: 0; }
+    h2 { margin-top: 0; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Role cards</h1>
+  <p class="lead">Each student gets a numbered card: a household with energy to buy or sell and private
+    information about what that energy is worth to them. The answer key shows what happens when everyone bids
+    exactly those values. Change the deck code for a fresh set of numbers. The form deals the same cards
+    when the number of students and the deck code match <code>CARDS</code> and <code>DECK_CODE</code> in
+    <code>apps_script.gs</code> (10 and "1" unless you changed them).</p>
+
+  <div class="controls">
+    <label>Students <input id="count" type="number" min="2" max="60" value="10"></label>
+    <label>Deck code <input id="seed" type="text" value="1" spellcheck="false"></label>
+    <label>Background
+      <select id="background">
+        <option value="empty">empty</option>
+        <option value="normal">normal market</option>
+        <option value="stable">stable market</option>
+        <option value="volatile">volatile market</option>
+      </select>
+    </label>
+    <button id="printcards">Print cards</button>
+    <button id="printkey">Print answer key</button>
+  </div>
+
+  <section id="key">
+    <h2>Answer key <span id="keydeck" class="none"></span></h2>
+    <div class="summary" id="summary"></div>
+    <p class="note">The benchmark: every card bids exactly its values (buys at what the energy is worth, sells at the
+      least the household would accept). Students who shade their bids may do better or worse; that is the
+      discussion. The score is what a household gains from the market compared with not taking part.</p>
+    <div class="tablewrap" style="margin-top:10px"><table id="keytable"></table></div>
+  </section>
+
+  <section id="cardsection">
+    <h2 class="noprint">Cards</h2>
+    <div id="cards"></div>
+  </section>
+</main>
+
+<script>
+// BEGIN MARKET -- a port of annex96p2p.market.clear(); keep in step with it.
+const TOL = 1e-9;
+
+// vectors: one array per participant, one signed kWh per price level (+ buy, - sell).
+function clearMarket(vectors) {
+  const m = vectors.length, n = vectors[0].length;
+  const buyAt = [], sellAt = [];
+  for (const v of vectors) {
+    // Net the bid: wants = bought at this level or above, offers = sold at this level or below.
+    const wants = new Array(n).fill(0), offers = new Array(n).fill(0);
+    let acc = 0;
+    for (let k = n - 1; k >= 0; k--) { acc += Math.max(v[k], 0); wants[k] = acc; }
+    acc = 0;
+    for (let k = 0; k < n; k++) { acc += Math.max(-v[k], 0); offers[k] = acc; }
+    const buys = wants.map((w, k) => Math.max(w - offers[k], 0));
+    const sells = wants.map((w, k) => Math.max(offers[k] - w, 0));
+    buyAt.push(buys.map((b, k) => Math.max(b - (k + 1 < n ? buys[k + 1] : 0), 0)));
+    sellAt.push(sells.map((s, k) => Math.max(s - (k > 0 ? sells[k - 1] : 0), 0)));
+  }
+  const demand = new Array(n).fill(0), supply = new Array(n).fill(0);
+  let acc = 0;
+  for (let k = n - 1; k >= 0; k--) { for (let i = 0; i < m; i++) acc += buyAt[i][k]; demand[k] = acc; }
+  acc = 0;
+  for (let k = 0; k < n; k++) { for (let i = 0; i < m; i++) acc += sellAt[i][k]; supply[k] = acc; }
+  const volume = demand.map((d, k) => Math.min(d, supply[k]));
+  const best = Math.max(...volume);
+  const result = { level: null, volume: 0, quantities: new Array(m).fill(0), demand, supply, volumeCurve: volume,
+                   buyAt, sellAt, tied: [], closest: [] };
+  if (best <= TOL) return result;
+
+  let tied = [];
+  for (let k = 0; k < n; k++) if (volume[k] >= best - TOL) tied.push(k);
+  const gaps = tied.map(k => Math.abs(demand[k] - supply[k]));
+  const smallest = Math.min(...gaps);
+  const closest = tied.filter((k, i) => gaps[i] <= smallest + TOL);
+  const j = closest[Math.floor(closest.length / 2)];
+
+  const cleared = volume[j];
+  const buyFill = demand[j] > TOL ? cleared / demand[j] : 0;
+  const sellFill = supply[j] > TOL ? cleared / supply[j] : 0;
+  const q = new Array(m).fill(0);
+  for (let i = 0; i < m; i++) {
+    let eb = 0, es = 0;
+    for (let k = j; k < n; k++) eb += buyAt[i][k];
+    for (let k = 0; k <= j; k++) es += sellAt[i][k];
+    q[i] = eb * buyFill - es * sellFill;
+  }
+  // Kill floating point drift so the market balances exactly.
+  const residual = q.reduce((a, b) => a + b, 0);
+  if (Math.abs(residual) > TOL) {
+    let big = 0;
+    for (let i = 1; i < m; i++) if (Math.abs(q[i]) > Math.abs(q[big])) big = i;
+    q[big] -= residual;
+  }
+  return Object.assign(result, { level: j, volume: cleared, quantities: q, tied, closest });
+}
+// END MARKET
+
+const GRID = 30;   // cents: the grid price, also the highest price on the market
+
+// BEGIN DECK -- identical in role_cards.html and apps_script.gs, so the form and the printed cards match; keep them in step.
+// The eight households, dealt in this order so that any number of students gets a mix of buyers and sellers.
+// Each parameter is drawn from [low, high]; tiers are [kWh, cents]: for a buyer what the kWh are worth at most,
+// for a seller the least it would accept for them.
+const ROLES = [
+  { title: "Empty battery", side: "buy", params: { must: [2, 4], later: [8, 12] },
+    tiers: p => [[p.must, GRID], [2, p.later]],
+    story: p => `Your home battery is almost empty. Over the next two hours your home uses ${p.must} kWh: whatever you
+      do not buy here, you buy from the grid at ${GRID}¢. In two hours the price drops to ${p.later}¢, so 2 more kWh
+      to fill the battery now are worth at most ${p.later}¢ to you.` },
+  { title: "Solar roof, no battery", side: "sell", params: { kwh: [4, 6], feedin: [4, 7] },
+    tiers: p => [[p.kwh, p.feedin]],
+    story: p => `The sun is out: your solar panels make ${p.kwh} kWh more than your home uses, and you cannot store it.
+      Whatever you do not sell here goes to the grid at the feed-in tariff of ${p.feedin}¢.` },
+  { title: "Heat pump, cold house", side: "buy", params: { must: [2, 3], comfort: [14, 18] },
+    tiers: p => [[p.must, GRID], [2, p.comfort]],
+    story: p => `It is cold. Your heat pump needs ${p.must} kWh to keep the house at its setpoint; whatever you do not
+      buy here comes from the grid at ${GRID}¢. Another 2 kWh would pre-heat the house for the evening, which is
+      worth ${p.comfort}¢/kWh to you in comfort.` },
+  { title: "Full battery", side: "sell", params: { spare: [2, 3], tomorrow: [12, 16], keep: [2, 3], evening: [22, 26] },
+    tiers: p => [[p.spare, p.tomorrow], [p.keep, p.evening]],
+    story: p => `Your battery is full. ${p.spare} kWh are spare: you could also sell them tomorrow for about
+      ${p.tomorrow}¢. Another ${p.keep} kWh are meant for this evening, when they save you ${p.evening}¢/kWh; you
+      would only sell those for more.` },
+  { title: "Electric car, leaving soon", side: "buy", params: { kwh: [3, 5], fast: [21, 25] },
+    tiers: p => [[p.kwh, p.fast]],
+    story: p => `You leave in two hours and your car needs ${p.kwh} kWh more. Whatever you do not get here, you charge
+      on the way at a fast charger for ${p.fast}¢/kWh.` },
+  { title: "Solar roof with battery", side: "sell", params: { now: [2, 4], low: [7, 9], later: [2, 3], high: [17, 19] },
+    tiers: p => [[p.now, p.low], [p.later, p.high]],
+    story: p => `Your panels make more than you use and your battery is nearly full: ${p.now} kWh go to the grid at
+      ${p.low}¢ unless you sell them here. Another ${p.later} kWh could stay in the battery for later, where they are
+      worth ${p.high}¢/kWh to you.` },
+  { title: "Workshop with a deadline", side: "buy", params: { must: [2, 4], extra: [1, 2], value: [17, 21] },
+    tiers: p => [[p.must, GRID], [p.extra, p.value]],
+    story: p => `Your machines must run for an order: ${p.must} kWh, from the grid at ${GRID}¢ if not from here.
+      ${p.extra} kWh more would let you start the next job early; that is worth ${p.value}¢/kWh to you.` },
+  { title: "Solar home that can turn down", side: "sell", params: { surplus: [2, 3], feedin: [5, 7], comfort: [19, 23] },
+    tiers: p => [[p.surplus, p.feedin], [2, p.comfort]],
+    story: p => `Your solar panels make ${p.surplus} kWh more than your home uses (feed-in tariff: ${p.feedin}¢). You
+      could also switch off your heat pump for an hour and sell the 2 kWh it would use, but the house gets cooler: you
+      want at least ${p.comfort}¢/kWh for that.` },
+];
+
+// ---------------------------------------------------------------- deck
+function rng(seedText) {                       // string hash + mulberry32: the same code always deals the same deck
+  let h = 1779033703 ^ seedText.length;
+  for (let i = 0; i < seedText.length; i++) { h = Math.imul(h ^ seedText.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  let a = h >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function deal(count, seedText) {
+  const rand = rng(seedText);
+  const cards = [];
+  for (let i = 0; i < count; i++) {
+    const role = ROLES[i % ROLES.length];
+    const p = {};
+    for (const [k, [lo, hi]] of Object.entries(role.params)) p[k] = lo + Math.floor(rand() * (hi - lo + 1));
+    cards.push({ no: i + 1, role, p, side: role.side, tiers: role.tiers(p) });
+  }
+  return cards;
+}
+// END DECK
+
+// Background participants, as on the big screen: [kWh (+ buy, - sell), cents].
+const BACKGROUNDS = {
+  empty: [],
+  normal: [[[-4, 1]], [[-3, 6], [-3, 15]], [[-4, 12]], [[5, 4], [-4, 20]],
+           [[4, 27], [2, 14]], [[5, 24]], [[3, 18], [2, 9]], [[6, 3], [-3, 25]]],
+  stable: [[[-1.5, 13], [-1.5, 15], [-1.5, 17], [-1.5, 19], [-1.5, 21]],
+           [[-1.5, 14], [-1.5, 16], [-1.5, 18], [-1.5, 20], [-1.5, 22]],
+           [[-1.5, 13], [-1.5, 15], [-1.5, 16], [-1.5, 18], [-1.5, 20]],
+           [[-1.5, 14], [-1.5, 15], [-1.5, 17], [-1.5, 19], [-1.5, 21]],
+           [[1.5, 23], [1.5, 21], [1.5, 19], [1.5, 17], [1.5, 15]],
+           [[1.5, 22], [1.5, 20], [1.5, 18], [1.5, 16], [1.5, 14]],
+           [[1.5, 23], [1.5, 21], [1.5, 20], [1.5, 18], [1.5, 16]],
+           [[1.5, 22], [1.5, 21], [1.5, 19], [1.5, 17], [1.5, 15]]],
+  volatile: [[[-5, 2]], [[-5, 3]], [[-2, 20]], [[-2, 21]], [[5, 28]], [[5, 27]], [[2, 6]], [[2, 5]]],
+};
+const BG_LABEL = { empty: "", normal: "normal market", stable: "stable market", volatile: "volatile market" };
+
+
+// BEGIN SCORE -- the same in big_screen.html; keep them in step.
+// What a household gains from trading q kWh (+ bought, - sold) at price cents, compared with not trading.
+// A buyer fills its most valuable needs first; energy beyond its needs is worth nothing to it.
+// A seller sells its cheapest energy first; energy it does not have it must buy from the grid.
+function score(card, q, price, grid) {
+  let left = Math.abs(q), gain = 0;
+  const tiers = card.side === "buy" ? [...card.tiers].sort((a, b) => b[1] - a[1]) : [...card.tiers].sort((a, b) => a[1] - b[1]);
+  if (q > 0 && card.side === "buy" || q < 0 && card.side === "sell") {
+    for (const [kwh, cents] of tiers) {
+      const x = Math.min(left, kwh); left -= x;
+      gain += card.side === "buy" ? (cents - price) * x : (price - cents) * x;
+    }
+    gain += card.side === "buy" ? -price * left : (price - grid) * left;
+  } else if (q > 0) {
+    gain = -price * left;                       // a seller buying: the energy is worth nothing to it
+  } else if (q < 0) {
+    gain = (price - grid) * left;               // a buyer selling energy it does not have
+  }
+  return gain;
+}
+// END SCORE
+
+function truthfulBids(card) {
+  return card.tiers.map(([kwh, cents]) => [card.side === "buy" ? kwh : -kwh, cents]);
+}
+
+function toVector(bids) {
+  const v = new Array(GRID + 1).fill(0);
+  for (const [a, c] of bids) v[Math.min(GRID, Math.max(0, Math.round(c)))] += a;
+  return v;
+}
+
+// ---------------------------------------------------------------- page
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = x => (Math.round(x * 10) / 10).toFixed(1);
+const cents = c => (c < -0.05 ? "−" : "") + Math.abs(Math.round(c * 10) / 10) + "¢";
+
+function cardHtml(card, deckName) {
+  const buy = card.side === "buy";
+  const rows = [...card.tiers].sort((a, b) => buy ? b[1] - a[1] : a[1] - b[1]);
+  let from = 0;
+  const body = rows.map(([kwh, cents]) => {
+    const range = kwh === 1 && from === 0 ? "the first kWh" : from === 0 ? `the first ${kwh} kWh` : `the next ${kwh} kWh`;
+    from += kwh;
+    return `<tr><td>${range}</td><td class="num"><b>${cents}¢</b>${cents === GRID && buy ? " (else from the grid)" : ""}</td></tr>`;
+  }).join("");
+  const beyond = buy
+    ? `<tr><td>more than ${from} kWh</td><td class="num">0¢ (you cannot use it)</td></tr>`
+    : `<tr><td>more than ${from} kWh</td><td class="num">you do not have it: buy it from the grid at ${GRID}¢</td></tr>`;
+  return `<div class="card">
+    <div class="top"><span class="no">#${card.no}</span><span class="deck">deck ${esc(deckName)}</span></div>
+    <div><span class="side ${card.side}">${buy ? "You buy" : "You sell"}</span><h3>${esc(card.role.title)}</h3></div>
+    <p>${card.role.story(card.p).replace(/\s+/g, " ")}</p>
+    <table><tr><th>energy</th><th>${buy ? "worth to you at most" : "the least you accept"}</th></tr>${body}${beyond}</table>
+    <div class="rule">Your score: for every kWh you ${buy ? "buy, what it is worth to you minus the market price" :
+      "sell, the market price minus the least you accept"}. Bid what you like (amount ${buy ? "positive" : "negative"},
+      price 0 to ${GRID}¢): you do not have to bid your true values.</div>
+    <div class="write"><span>Market price ____¢</span><span>I ${buy ? "bought" : "sold"} ____ kWh</span><span>Score ______¢</span></div>
+  </div>`;
+}
+
+function render() {
+  const count = Math.max(2, Math.min(60, Math.round(Number($("count").value) || 16)));
+  const deckName = $("seed").value.trim() || "1";
+  const bg = $("background").value;
+  const cards = deal(count, deckName);
+  $("cards").innerHTML = cards.map(c => cardHtml(c, deckName)).join("");
+
+  const bgBids = BACKGROUNDS[bg];
+  const r = clearMarket(cards.map(c => toVector(truthfulBids(c))).concat(bgBids.map(toVector)));
+  const price = r.level;
+  const scores = cards.map((c, i) => price === null ? 0 : score(c, r.quantities[i], price, GRID));
+  const total = scores.reduce((a, b) => a + b, 0);
+  const demand = cards.filter(c => c.side === "buy").reduce((s, c) => s + c.tiers.reduce((a, t) => a + t[0], 0), 0);
+  const supply = cards.filter(c => c.side === "sell").reduce((s, c) => s + c.tiers.reduce((a, t) => a + t[0], 0), 0);
+
+  $("keydeck").textContent = `· deck ${deckName}, ${count} students` + (bg !== "empty" ? `, ${BG_LABEL[bg]} in the background` : "");
+  $("summary").innerHTML = price === null
+    ? `<span>With true values, <b>nothing trades</b>.</span>`
+    : `<span>Clears at <b>${price}¢</b></span><span><b>${fmt(r.volume)}</b> kWh traded</span>
+       <span>students' total score <b>${cents(total)}</b></span>
+       <span class="none">cards want to buy ${demand} kWh and sell ${supply} kWh in all</span>`;
+
+  const head = `<tr><th>#</th><th>household</th><th>true values (as bids)</th><th>result at true values</th><th>score</th></tr>`;
+  const rows = cards.map((c, i) => {
+    const q = r.quantities[i];
+    const bids = truthfulBids(c).map(([a, cents]) =>
+      `<span class="${a > 0 ? "buy" : "sell"}">${a > 0 ? "buy" : "sell"} ${Math.abs(a)} @ ${cents}¢</span>`).join(", ");
+    const res = Math.abs(q) < 0.05 ? `<span class="none">no trade</span>`
+      : `<span class="${q > 0 ? "buy" : "sell"}">${q > 0 ? "bought" : "sold"} ${fmt(Math.abs(q))} kWh</span>`;
+    return `<tr><td class="num">${c.no}</td><td>${esc(c.role.title)}</td><td>${bids}</td><td>${res}</td><td class="num">${cents(scores[i])}</td></tr>`;
+  });
+  const bgRows = bgBids.map((bids, i) => {
+    const q = r.quantities[cards.length + i];
+    const res = Math.abs(q) < 0.05 ? "no trade" : `${q > 0 ? "bought" : "sold"} ${fmt(Math.abs(q))} kWh`;
+    return `<tr class="bg"><td>${"ABCDEFGH"[i]}</td><td>background</td><td>${bids.map(([a, c]) => `${a > 0 ? "buy" : "sell"} ${Math.abs(a)} @ ${c}¢`).join(", ")}</td><td>${res}</td><td></td></tr>`;
+  });
+  $("keytable").innerHTML = head + rows.join("") + bgRows.join("");
+}
+
+function printPart(part) {
+  document.body.classList.add("print-" + part);
+  window.print();
+  document.body.classList.remove("print-" + part);
+}
+
+for (const id of ["count", "seed", "background"]) { $(id).addEventListener("input", render); $(id).addEventListener("change", render); }
+$("printcards").onclick = () => printPart("cards");
+$("printkey").onclick = () => printPart("key");
+render();
+</script>
+</body>
+</html>
